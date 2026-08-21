@@ -36,6 +36,7 @@ Item {
   readonly property bool showTutorial: root.queryText.length === 0
   property string diskLabel: ""
   property real diskUsedFrac: 0
+  property string activePath: ""
   property var tutorialRows: [
     { key: "type", action: "Search files in your home folder" },
     { key: "↑ ↓", action: "Move through results" },
@@ -62,6 +63,7 @@ Item {
     root.results = []
     root.lastQueryRev = -1
     root.previewResult = ({})
+    root.activePath = ""
     Qt.callLater(function() { searchField.forceActiveFocus() })
   }
   function close() { root.opened = false; root.pinned = false }
@@ -131,6 +133,7 @@ Item {
     root.callIpc("query", q)
   }
   function requestPreview(path, page) {
+    root.activePath = String(path || "")
     root.previewLoading = true
     root.callIpc("preview", JSON.stringify({ path: path, page: page || 1 }))
   }
@@ -141,16 +144,24 @@ Item {
     root.selectedIndex = i
     root.requestPreview(root.results[i].path, 1)
   }
+  function launchFile(path) {
+    var p = String(path || "")
+    if (!p.length) return
+    var quoted = "'" + p.replace(/'/g, "'\\''") + "'"
+    Quickshell.execDetached(["hyprctl", "dispatch", "exec", "xdg-open " + quoted])
+  }
   function openCurrent() {
-    var hit = root.currentHit()
-    if (!hit) return
-    var svc = root.serviceRef()
-    if (svc && typeof svc.openPath === "function") svc.openPath(hit.path)
-    else Quickshell.execDetached(["xdg-open", hit.path])
-    root.close()
+    var p = root.activePath
+    if (!p.length) {
+      var hit = root.currentHit()
+      if (hit && hit.path) p = String(hit.path)
+    }
+    if (!p.length) return
+    root.launchFile(p)
+    Qt.callLater(root.close)
   }
   function pinToggle() {
-    if (!root.currentHit()) return
+    if (!root.currentHit() && !root.activePath.length) return
     root.pinned = !root.pinned
     if (root.pinned) Qt.callLater(function() { pinnedPane.forceActiveFocus() })
     else Qt.callLater(function() { searchField.forceActiveFocus() })
