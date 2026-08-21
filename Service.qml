@@ -5,14 +5,11 @@ import "js/Format.js" as Format
 
 Item {
   id: root
-
   property var shell: null
   property var manifest: null
   property var pluginRegistry: null
-
   readonly property string pluginId: "io.github.maiosx.preview"
   readonly property string home: Quickshell.env("HOME") || "/tmp"
-
   property var lastResults: []
   property var lastPreview: ({})
   property int resultsRevision: 0
@@ -24,11 +21,7 @@ Item {
   property string previewPath: ""
 
   readonly property string searchBody: "q=\"$1\"; home=\"$2\"; fd_bin=$(command -v fd || command -v fdfind || true); " +
-    "if [ -z \"$q\" ]; then " +
-    "  if [ -n \"$fd_bin\" ]; then \"$fd_bin\" -a -H -t f --changed-within 30d --max-results 40 --max-depth 8 -E .git -E node_modules -E .cache . \"$home\"; " +
-    "  else find \"$home\" -maxdepth 3 -type f ! -path '*/.git/*' ! -path '*/node_modules/*' ! -path '*/.cache/*' 2>/dev/null | head -n 40; fi; " +
-    "  exit 0; " +
-    "fi; " +
+    "if [ -z \"$q\" ]; then exit 0; fi; " +
     "if [ -n \"$fd_bin\" ]; then \"$fd_bin\" -a -H -i -F --max-results 50 --max-depth 16 -E .git -E node_modules -E .cache -- \"$q\" \"$home\"; exit 0; fi; " +
     "if command -v plocate >/dev/null 2>&1; then plocate -i -l 50 -N -- \"$q\"; exit 0; fi; " +
     "find \"$home\" -maxdepth 8 \\( -name .git -o -name node_modules -o -name .cache \\) -prune -o -iname \"*$q*\" -print 2>/dev/null | head -n 50"
@@ -36,7 +29,6 @@ Item {
   function escapeHtml(s) {
     return String(s || "").replace(/&/g, "&" + "amp;").replace(/</g, "&" + "lt;").replace(/>/g, "&" + "gt;")
   }
-
   function applyPathList(text, usedBackend) {
     var lines = String(text || "").split(/\r?\n/)
     var hits = []
@@ -59,29 +51,27 @@ Item {
     root.resultsRevision += 1
     root.lastStatus = "hits:" + hits.length
   }
-
-  function sanitize(q) {
-    return String(q || "").replace(/[*?[\]\\'"]/g, "")
-  }
-
+  function sanitize(q) { return String(q || "").replace(/[*?[\]\\'"]/g, "") }
   function query(q) {
     root.searchNeedle = root.sanitize(q)
+    if (!root.searchNeedle.length) {
+      root.lastResults = []
+      root.backend = "idle"
+      root.resultsRevision += 1
+      root.lastStatus = "idle"
+      root.searchRunning = false
+      return String(root.resultsRevision)
+    }
     Qt.callLater(root.startSearch)
     return String(root.resultsRevision + 1)
   }
-
   function startSearch() {
-    if (searchProc.running) {
-      searchProc.running = false
-      Qt.callLater(root.startSearch)
-      return
-    }
+    if (searchProc.running) { searchProc.running = false; Qt.callLater(root.startSearch); return }
     searchProc.command = ["sh", "-c", root.searchBody, "preview-search", root.searchNeedle, root.home]
     searchProc.running = true
     root.searchRunning = true
     root.lastStatus = "searching"
   }
-
   function applyTextPreview(raw) {
     var s = String(raw || "")
     var binary = s.indexOf("\0") >= 0
@@ -96,25 +86,14 @@ Item {
       }
       root.lastPreview = { kind: "hex", path: root.previewPath, label: Format.basename(root.previewPath), hex: hex }
     } else {
-      root.lastPreview = {
-        kind: "code",
-        path: root.previewPath,
-        html: "<pre>" + root.escapeHtml(s) + "</pre>",
-        large: large,
-        label: Format.basename(root.previewPath)
-      }
+      root.lastPreview = { kind: "code", path: root.previewPath, html: "<pre>" + root.escapeHtml(s) + "</pre>", large: large, label: Format.basename(root.previewPath) }
     }
     root.previewRevision += 1
   }
-
   function requestPreview(path, page) {
     var p = String(path || "")
     root.previewPath = p
-    if (!p.length) {
-      root.lastPreview = ({})
-      root.previewRevision += 1
-      return "0"
-    }
+    if (!p.length) { root.lastPreview = ({}); root.previewRevision += 1; return "0" }
     var kind = Format.kindOf(p, false)
     if (kind === "image") {
       root.lastPreview = Format.localPreview(p)
@@ -131,7 +110,6 @@ Item {
     previewFile.reload()
     return String(root.previewRevision + 1)
   }
-
   function preview(arg) {
     var path = String(arg || "")
     if (path.length && path.charAt(0) === "{") {
@@ -139,7 +117,6 @@ Item {
     }
     return root.requestPreview(path, 1)
   }
-
   function prefetch(path) { return root.requestPreview(path, 1) }
   function openPath(path) {
     if (path) Quickshell.execDetached(["xdg-open", path])
@@ -150,7 +127,6 @@ Item {
     Quickshell.execDetached(["sh", "-c", "if [ -d \"$1\" ]; then exec xdg-open \"$1\"; else exec xdg-open \"$(dirname \"$1\")\"; fi", "sh", path])
     return "ok"
   }
-
   function snapshotJson() {
     return JSON.stringify({
       resultsRevision: root.resultsRevision,
@@ -162,7 +138,6 @@ Item {
       lastStatus: root.lastStatus
     })
   }
-
   FileView {
     id: previewFile
     printErrors: false
@@ -173,7 +148,6 @@ Item {
       root.previewRevision += 1
     }
   }
-
   Process {
     id: pdfProc
     running: false
@@ -184,32 +158,24 @@ Item {
         if (t.indexOf("POPPLER_MISSING") === 0) {
           root.lastPreview = { kind: "pdf", path: root.previewPath, need_poppler: true, label: "PDF" }
           root.previewRevision += 1
-        } else {
-          root.applyTextPreview(t)
-        }
+        } else root.applyTextPreview(t)
       }
     }
   }
-
   Process {
     id: searchProc
     running: false
     stdout: StdioCollector {
       id: searchOut
       waitForEnd: true
-      onStreamFinished: {
-        root.applyPathList(text, "search")
-        root.searchRunning = false
-      }
+      onStreamFinished: { root.applyPathList(text, "search"); root.searchRunning = false }
     }
     onExited: function(code) {
       root.searchRunning = false
       var collected = String(searchOut.text || "")
-      if (root.lastStatus === "searching")
-        root.applyPathList(collected, "search")
+      if (root.lastStatus === "searching") root.applyPathList(collected, "search")
     }
   }
-
   IpcHandler {
     target: "io.github.maiosx.preview"
     function ping(arg: string): string { return "ok" }
@@ -220,12 +186,15 @@ Item {
     function prefetch(path: string): string { return root.prefetch(path) }
     function open(path: string): string { return root.openPath(path) }
     function reveal(path: string): string { return root.reveal(path) }
-    function warmup(arg: string): string { root.query(""); return "ok" }
+    function warmup(arg: string): string { return "ok" }
     function toggle(arg: string): string {
       Quickshell.execDetached(["omarchy-shell", "shell", "toggle", root.pluginId, arg && arg.length ? arg : "{}"])
       return "ok"
     }
   }
-
-  Component.onCompleted: root.query("")
+  Component.onCompleted: {
+    root.lastResults = []
+    root.backend = "idle"
+    root.resultsRevision += 1
+  }
 }
