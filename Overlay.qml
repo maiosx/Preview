@@ -37,6 +37,7 @@ Item {
   property string diskLabel: ""
   property real diskUsedFrac: 0
   property string activePath: ""
+  property string locFlash: ""
   readonly property string locationLabel: {
     var p = String(root.activePath || "")
     if (!p.length) return ""
@@ -89,6 +90,25 @@ Item {
     if (root.activePath.length) return root.activePath
     var hit = root.currentHit()
     return hit && hit.path ? String(hit.path) : ""
+  }
+  function locationPath() {
+    var p = String(root.activePath || "")
+    if (!p.length) return ""
+    var slash = p.lastIndexOf("/")
+    return slash > 0 ? p.slice(0, slash) : p
+  }
+  function copyText(s) {
+    var t = String(s || "")
+    if (!t.length) return
+    try { Quickshell.clipboardText = t } catch (e) {}
+    Quickshell.execDetached(["wl-copy", "--", t])
+  }
+  function copyLocation() {
+    var p = root.locationPath()
+    if (!p.length) return
+    root.copyText(p)
+    root.locFlash = "copied"
+    locFlashTimer.restart()
   }
 
   function callIpc(method, arg) {
@@ -208,6 +228,12 @@ Item {
     running: root.opened
     repeat: true
     onTriggered: root.callIpc("snapshot", "")
+  }
+  Timer {
+    id: locFlashTimer
+    interval: 1200
+    repeat: false
+    onTriggered: root.locFlash = ""
   }
   Timer {
     id: debounce
@@ -435,18 +461,25 @@ Item {
         loading: root.previewLoading
         foreground: root.foreground
         accent: root.accent
+        selectable: true
       }
       Text {
         anchors.bottom: parent.bottom
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottomMargin: 16
         width: parent.width * 0.8
-        text: root.locationLabel
-        color: root.foreground
-        opacity: 0.55
+        text: root.locFlash.length ? root.locFlash : root.locationLabel
+        color: root.locFlash.length ? root.accent : root.foreground
+        opacity: root.locFlash.length ? 1 : 0.55
         font.pixelSize: Style.font.caption
         elide: Text.ElideMiddle
         horizontalAlignment: Text.AlignHCenter
+        MouseArea {
+          anchors.fill: parent
+          hoverEnabled: true
+          cursorShape: Qt.PointingHandCursor
+          onClicked: root.copyLocation()
+        }
       }
     }
   }
