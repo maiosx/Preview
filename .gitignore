@@ -1,0 +1,9 @@
+bin/quicklookd
+bin/quicklookd-*
+src/quicklookd/target/
+target/
+.DS_Store
+*.swp
+*.swo
+__pycache__/
+*.pyc

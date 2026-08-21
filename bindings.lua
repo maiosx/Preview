@@ -1,0 +1,9 @@
+-- Preview keybind snippet for Omarchy / Hyprland.
+-- Default: SUPER + PERIOD (.). Alternate: SUPER + ALT + PERIOD.
+-- Super+Shift+P is stock Google Photos — never steal it.
+-- Super+Ctrl+. is Transcode — never steal it.
+--
+-- Paste these lines if you want a hotkey:
+--
+--   o.bind("SUPER + PERIOD", "Preview", "omarchy-shell shell toggle io.github.maiosx.preview '{}'")
+--   o.bind("SUPER + ALT + PERIOD", "Preview", "omarchy-shell shell toggle io.github.maiosx.preview '{}'")
