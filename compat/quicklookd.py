@@ -3,7 +3,7 @@ import json, os, shutil, subprocess, sys
 from pathlib import Path
 
 HOME = Path(os.environ.get("HOME") or "/tmp")
-SKIP = {".git", "node_modules", ".cache", "target", "__pycache__", ".ssh", ".gnupg"}
+SKIP = {".git", "node_modules", ".cache", "target", "__pycache__", ".ssh", ".gnupg", ".local"}
 
 def parse_req():
     oneshot = None
@@ -21,37 +21,52 @@ def parse_req():
     return json.loads(line) if line.strip() else {"cmd": "status", "id": 0}
 
 def kind_of(p: Path) -> str:
+    if p.is_dir():
+        return "dir"
     ext = p.suffix.lower().lstrip(".")
-    if ext in {"png", "jpg", "jpeg", "webp", "gif", "svg"}:
+    if ext in {"png", "jpg", "jpeg", "webp", "gif", "svg", "bmp"}:
         return "image"
     if ext == "pdf":
         return "pdf"
     if ext in {"csv", "tsv"}:
         return "csv"
-    if ext in {"rs", "js", "ts", "py", "go", "md", "qml", "json", "sh", "lua", "txt"}:
+    if ext in {"rs", "js", "ts", "py", "go", "md", "qml", "json", "sh", "lua", "txt", "toml", "yml", "yaml"}:
         return "code"
-    return "hex" if p.is_file() else "dir"
+    return "hex"
+
+def score_name(name, q):
+    n = name.lower()
+    ql = (q or "").lower()
+    if not ql:
+        return 1
+    if n == ql:
+        return 1000
+    if n.startswith(ql):
+        return 800
+    if ql in n:
+        return 600
+    return 200
 
 def hits_from(paths, q, cap=40):
     out = []
-    ql = q.lower()
+    seen = set()
     for line in paths:
-        p = Path(line.strip())
-        if not line.strip():
+        raw = (line or "").strip().strip("'").strip('"')
+        if not raw or raw in seen:
             continue
+        p = Path(raw)
         if any(part in SKIP for part in p.parts):
             continue
         try:
             st = p.stat()
         except OSError:
             continue
-        name = p.name
-        score = 800 if name.lower().startswith(ql) else 600 if ql in name.lower() else 200
+        seen.add(raw)
         out.append({
             "path": str(p),
-            "name": name,
+            "name": p.name,
             "kind": kind_of(p),
-            "score": score,
+            "score": score_name(p.name, q),
             "mtime": int(st.st_mtime * 1000),
             "size": st.st_size,
         })
@@ -60,32 +75,49 @@ def hits_from(paths, q, cap=40):
     out.sort(key=lambda x: (-x["score"], x["name"]))
     return out
 
-def search(q: str):
-    q = "".join(ch for ch in q if ch.isalnum() or ch in ".._-")
+def run(cmd, timeout):
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, start_new_session=True)
+        return [ln for ln in proc.stdout.splitlines() if ln.strip()]
+    except Exception:
+        return []
+
+def search(q):
+    q = (q or "").strip()
     if not q:
-        return [], "compat"
-    loc = shutil.which("plocate") or shutil.which("locate")
+        return recent_files(), "recent"
     paths = []
+    loc = shutil.which("plocate") or shutil.which("locate")
     if loc:
-        try:
-            proc = subprocess.run([loc, "-il", "40", "--", q], capture_output=True, text=True, timeout=2)
-            paths = proc.stdout.splitlines()
-        except Exception:
-            paths = []
+        paths = run([loc, "-i", "-l", "50", "-N", "--", q], 2)
+        if not paths:
+            paths = run([loc, "-i", "-l", "50", "--", q], 2)
+    if not paths and shutil.which("fd"):
+        paths = run(["fd", "-a", "-H", "-i", "--max-results", "50", q, str(HOME)], 3)
     if not paths and shutil.which("find"):
-        try:
-            proc = subprocess.run(
-                ["find", str(HOME), "-iname", f"*{q}*",
-                 "(", "-name", ".git", "-o", "-name", "node_modules", "-o", "-name", ".cache", ")",
-                 "-prune", "-o", "-print"],
-                capture_output=True, text=True, timeout=4,
-            )
-            paths = proc.stdout.splitlines()[:80]
-        except Exception:
-            paths = []
+        roots = [HOME / d for d in ("Documents", "Downloads", "Desktop", "Pictures", "Videos", "Music", "Projects", "src", "code")]
+        roots = [r for r in roots if r.is_dir()] or [HOME]
+        for root in roots:
+            chunk = run([
+                "find", str(root), "-maxdepth", "6",
+                "(", "-name", ".git", "-o", "-name", "node_modules", "-o", "-name", ".cache", ")",
+                "-prune", "-o", "-iname", f"*{q}*", "-print",
+            ], 3)
+            paths.extend(chunk)
+            if len(paths) >= 50:
+                break
     return hits_from(paths, q), "compat"
 
-def preview(path: str):
+def recent_files():
+    roots = [HOME / d for d in ("Documents", "Downloads", "Desktop", "Pictures")]
+    roots = [r for r in roots if r.is_dir()] or [HOME]
+    paths = []
+    if shutil.which("find"):
+        for root in roots:
+            paths.extend(run(["find", str(root), "-maxdepth", "2", "-type", "f"], 2))
+    return hits_from(paths[:40], "")
+
+def preview(path):
     p = Path(path)
     if not path:
         return {"kind": "hex", "label": "no file"}
@@ -102,11 +134,10 @@ def handle(req):
         return {"id": rid, "kind": "results", "results": hits, "indexing": False, "progress": 1.0, "backend": backend}
     if cmd in ("preview", "prefetch", "page"):
         return {"id": rid, "kind": "preview", "preview": preview(str(req.get("path") or ""))}
-    return {"id": rid, "kind": "status", "status": {"helper": "compat", "plocate": bool(shutil.which("plocate"))}, "backend": "compat"}
+    return {"id": rid, "kind": "status", "status": {"helper": "compat"}, "backend": "compat"}
 
 def main():
-    req = parse_req()
-    print(json.dumps(handle(req)), flush=True)
+    print(json.dumps(handle(parse_req())), flush=True)
 
 if __name__ == "__main__":
     main()

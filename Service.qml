@@ -49,12 +49,13 @@ Item {
   property var oneshotQueue: []
   property var oneshotCurrent: null
 
-  function helperCommand() {
-    return root.helperIsBinary ? root.helperBin : root.helperSh
-  }
-
   function helperLaunch(oneshotJson) {
-    var cmd = [root.helperCommand(), "--plugin-dir", root.pluginDir]
+    var cmd
+    if (root.helperIsBinary) {
+      cmd = [root.helperBin, "--plugin-dir", root.pluginDir]
+    } else {
+      cmd = ["python3", root.pluginDir + "/compat/quicklookd.py", "--plugin-dir", root.pluginDir]
+    }
     if (oneshotJson !== undefined && oneshotJson !== null) {
       cmd.push("--oneshot")
       cmd.push(String(oneshotJson))
@@ -176,17 +177,6 @@ Item {
     })
   }
 
-  function statusJson() {
-    return JSON.stringify({
-      id: root.pluginId,
-      helper: root.helperCmd,
-      helperIsBinary: root.helperIsBinary,
-      backend: root.backend,
-      indexing: root.indexing,
-      results: root.lastResults.length
-    })
-  }
-
   Process {
     id: oneshotProc
     running: false
@@ -220,7 +210,7 @@ Item {
       onStreamFinished: {
         var out = String(text || "").trim()
         root.helperIsBinary = (out === "binary")
-        root.helperCmd = root.helperIsBinary ? root.helperBin : root.helperSh
+        root.helperCmd = root.helperIsBinary ? root.helperBin : "python3"
         root.helperReady = true
         root.lastStatus = "ready"
         root.query("")
@@ -231,7 +221,7 @@ Item {
   IpcHandler {
     target: "io.github.maiosx.preview"
     function ping(arg: string): string { return "ok" }
-    function status(arg: string): string { return root.statusJson() }
+    function status(arg: string): string { return "{\"ok\":true}" }
     function snapshot(arg: string): string { return root.snapshotJson() }
     function query(q: string): string { return String(root.query(q)) }
     function preview(path: string): string { return root.preview(path) }
