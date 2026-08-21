@@ -33,9 +33,10 @@ Item {
   property var borderSpec: Border.surfaceSpec("menu", "border", border, Math.max(1, Style.space(2)))
   readonly property int cornerRadius: Style.cornerRadius
   property string fontFamily: Style.font.menuFamily
-  readonly property bool showTutorial: root.queryText.length === 0
+  readonly property bool compact: root.queryText.length === 0
   property string diskLabel: ""
   property real diskUsedFrac: 0
+  property string homePrefix: ""
   property string activePath: ""
   property string locFlash: ""
   readonly property string locationLabel: {
@@ -43,17 +44,10 @@ Item {
     if (!p.length) return ""
     var slash = p.lastIndexOf("/")
     var dir = slash > 0 ? p.slice(0, slash) : p
-    var home = String(Quickshell.env("HOME") || "")
+    var home = String(root.homePrefix || Quickshell.env("HOME") || "")
     if (home.length && dir.indexOf(home) === 0) dir = "~" + dir.slice(home.length)
     return dir.length ? dir : "/"
   }
-  property var tutorialRows: [
-    { key: "type", action: "Search files in your home folder" },
-    { key: "↑ ↓", action: "Move through results" },
-    { key: "Space", action: "Fullscreen preview of the selected file" },
-    { key: "Enter", action: "Open in the default application" },
-    { key: "Esc", action: "Close Preview" }
-  ]
 
   function serviceRef() {
     try {
@@ -115,7 +109,6 @@ Item {
     Quickshell.execDetached(["hyprctl", "keyword", "layerrule", "blur,preview"])
     Quickshell.execDetached(["hyprctl", "keyword", "layerrule", "ignorealpha 0,preview"])
     Quickshell.execDetached(["hyprctl", "keyword", "layerrule", "xray 0,preview"])
-    Quickshell.execDetached(["hyprctl", "keyword", "layerrule", "blur,quickshell:preview"])
   }
 
   function callIpc(method, arg) {
@@ -138,7 +131,17 @@ Item {
   }
   function setResults(list) {
     var next = []
-    if (list && list.length) { for (var i = 0; i < list.length; i++) next.push(list[i]) }
+    var prefix = String(root.homePrefix || "")
+    if (list && list.length) {
+      for (var i = 0; i < list.length; i++) {
+        var hit = list[i]
+        var p = hit && hit.path ? String(hit.path) : ""
+        if (!p.length) continue
+        if (prefix.length && p !== prefix && p.indexOf(prefix + "/") !== 0) continue
+        if (p.indexOf("/home/") !== 0 && p.indexOf("/root/") !== 0) continue
+        next.push(hit)
+      }
+    }
     root.results = next
     root.resultsTick += 1
     if (next.length) {
@@ -166,6 +169,7 @@ Item {
       root.previewResult = snap.preview || {}
       root.previewLoading = false
     }
+    if (snap.home) root.homePrefix = String(snap.home)
     if (snap.diskLabel !== undefined) root.diskLabel = String(snap.diskLabel || "")
     if (snap.diskUsedFrac !== undefined) root.diskUsedFrac = Number(snap.diskUsedFrac) || 0
   }
@@ -271,8 +275,10 @@ Item {
 
     BorderSurface {
       visible: !root.pinned
-      width: Math.min(Style.space(1120), parent.width - Style.gapsOut * 2)
-      height: Math.min(Style.space(680), parent.height - Style.gapsOut * 2)
+      width: Math.min(Style.space(root.compact ? 720 : 1120), parent.width - Style.gapsOut * 2)
+      height: root.compact
+        ? Style.space(140)
+        : Math.min(Style.space(680), parent.height - Style.gapsOut * 2)
       radius: root.cornerRadius
       anchors.centerIn: parent
       color: root.background
@@ -282,27 +288,27 @@ Item {
         anchors.fill: parent
         anchors.margins: Style.spacing.panelPadding
         spacing: Style.spacing.md
-        Row {
-          spacing: 12
-          Text { text: "Preview"; color: root.foreground; font.pixelSize: Style.font.heading; font.bold: true }
-          Text {
-            text: root.showTutorial ? "type to search" : (root.results.length ? (root.results.length + " files") : "no matches")
-            color: root.accent
-            font.pixelSize: Style.font.caption
-            anchors.verticalCenter: parent.verticalCenter
-          }
-        }
         Rectangle {
           width: parent.width
-          height: Style.space(40)
-          radius: 8
+          height: Style.space(48)
+          radius: 10
           border.color: searchField.activeFocus ? root.accent : root.border
           border.width: 1
           color: "transparent"
+          Text {
+            anchors.fill: parent
+            anchors.margins: 14
+            text: "Search"
+            visible: searchField.text.length === 0
+            color: root.foreground
+            opacity: 0.35
+            font.pixelSize: Style.font.title
+            verticalAlignment: Text.AlignVCenter
+          }
           TextInput {
             id: searchField
             anchors.fill: parent
-            anchors.margins: 10
+            anchors.margins: 14
             color: root.foreground
             font.pixelSize: Style.font.title
             clip: true
@@ -321,62 +327,11 @@ Item {
             onTextChanged: { root.queryText = text; debounce.restart() }
           }
         }
-        Column {
-          width: parent.width
-          height: parent.height - Style.space(148)
-          spacing: 10
-          visible: root.showTutorial
-          Text {
-            text: "Find a file, preview it, open it."
-            color: root.foreground
-            opacity: 0.7
-            font.pixelSize: Style.font.title
-          }
-          Repeater {
-            model: root.tutorialRows
-            delegate: Rectangle {
-              required property var modelData
-              width: parent.width
-              height: 56
-              radius: 10
-              color: "transparent"
-              border.color: root.border
-              border.width: 1
-              Row {
-                anchors.fill: parent
-                anchors.leftMargin: 16
-                anchors.rightMargin: 16
-                spacing: 16
-                Rectangle {
-                  width: Math.max(56, capLabel.implicitWidth + 24)
-                  height: 32
-                  radius: 6
-                  color: root.accent
-                  anchors.verticalCenter: parent.verticalCenter
-                  Text {
-                    id: capLabel
-                    anchors.centerIn: parent
-                    text: modelData.key
-                    color: root.background
-                    font.pixelSize: Style.font.body
-                    font.bold: true
-                  }
-                }
-                Text {
-                  text: modelData.action
-                  color: root.foreground
-                  font.pixelSize: Style.font.title
-                  anchors.verticalCenter: parent.verticalCenter
-                }
-              }
-            }
-          }
-        }
         Row {
           width: parent.width
-          height: parent.height - Style.space(148)
+          height: parent.height - Style.space(108)
           spacing: 12
-          visible: !root.showTutorial
+          visible: !root.compact
           ListView {
             id: resultsView
             width: parent.width * 0.36
@@ -465,7 +420,7 @@ Item {
       Rectangle {
         id: blurLayer
         anchors.fill: parent
-        color: Qt.rgba(root.background.r, root.background.g, root.background.b, 0.52)
+        color: Qt.rgba(root.background.r, root.background.g, root.background.b, 0.55)
       }
       PreviewPane {
         anchors.fill: parent
