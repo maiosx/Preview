@@ -34,6 +34,8 @@ Item {
   readonly property int cornerRadius: Style.cornerRadius
   property string fontFamily: Style.font.menuFamily
   readonly property bool showTutorial: root.queryText.length === 0
+  property string diskLabel: ""
+  property real diskUsedFrac: 0
   property var tutorialRows: [
     { key: "type", action: "Search files in your home folder" },
     { key: "↑ ↓", action: "Move through results" },
@@ -121,6 +123,8 @@ Item {
       root.previewResult = snap.preview || {}
       root.previewLoading = false
     }
+    if (snap.diskLabel !== undefined) root.diskLabel = String(snap.diskLabel || "")
+    if (snap.diskUsedFrac !== undefined) root.diskUsedFrac = Number(snap.diskUsedFrac) || 0
   }
   function requestQuery(q) {
     if (!String(q || "").length) { root.results = []; root.previewResult = ({}); return }
@@ -166,7 +170,7 @@ Item {
   }
   Timer {
     interval: 100
-    running: root.opened && !root.showTutorial
+    running: root.opened
     repeat: true
     onTriggered: root.callIpc("snapshot", "")
   }
@@ -247,7 +251,7 @@ Item {
         }
         Column {
           width: parent.width
-          height: parent.height - Style.space(100)
+          height: parent.height - Style.space(148)
           spacing: 10
           visible: root.showTutorial
           Text {
@@ -298,7 +302,7 @@ Item {
         }
         Row {
           width: parent.width
-          height: parent.height - Style.space(100)
+          height: parent.height - Style.space(148)
           spacing: 12
           visible: !root.showTutorial
           ListView {
@@ -340,6 +344,37 @@ Item {
             loading: root.previewLoading
             foreground: root.foreground
             accent: root.accent
+          }
+        }
+        Column {
+          width: parent.width
+          spacing: 6
+          Item {
+            width: parent.width
+            height: 6
+            Rectangle {
+              anchors.horizontalCenter: parent.horizontalCenter
+              width: Math.min(parent.width * 0.42, 280)
+              height: 6
+              radius: 3
+              color: root.border
+              visible: root.diskLabel.length > 0
+              Rectangle {
+                width: parent.width * Math.min(1, Math.max(0, root.diskUsedFrac))
+                height: parent.height
+                radius: 3
+                color: root.diskUsedFrac > 0.9 ? "#f7768e" : root.accent
+              }
+            }
+          }
+          Text {
+            width: parent.width
+            horizontalAlignment: Text.AlignHCenter
+            text: root.diskLabel
+            visible: root.diskLabel.length > 0
+            color: root.foreground
+            opacity: 0.55
+            font.pixelSize: Style.font.caption
           }
         }
       }
