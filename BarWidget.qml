@@ -3,7 +3,6 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
-import "js/Binds.js" as Binds
 
 BarWidget {
   id: root
@@ -13,12 +12,6 @@ BarWidget {
   property var shell: bar && bar.shell ? bar.shell : null
   property var manifest: null
   property var pluginRegistry: null
-
-  property bool offerBinds: true
-  property bool canSetHotkey: false
-  property string offerNote: ""
-  property string hotkeyLabel: ""
-  property bool bindInstallTried: false
   property var workQueue: []
   property var workCurrent: null
 
@@ -31,11 +24,6 @@ BarWidget {
     return u
   }
 
-  readonly property string chipTooltip: {
-    var keys = root.hotkeyLabel.length ? root.hotkeyLabel : "Super+Alt+F"
-    return "Preview  " + keys
-  }
-
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
@@ -45,19 +33,6 @@ BarWidget {
       return
     }
     Quickshell.execDetached(["omarchy-shell", "shell", "toggle", root.pluginId, "{}"])
-  }
-
-  function applyBindPlan(plan) {
-    var p = plan || Binds.offer
-    root.offerBinds = !!p.needed
-    root.canSetHotkey = !!p.canSet
-    root.offerNote = String(p.note || "")
-    root.hotkeyLabel = String(p.hotkeyLabel || "")
-    Binds.setOffer(p)
-    if (p.needed && p.canSet && !root.bindInstallTried) {
-      root.bindInstallTried = true
-      Qt.callLater(root.installBinds)
-    }
   }
 
   function enqueueWork(command, done) {
@@ -73,41 +48,13 @@ BarWidget {
     workProc.running = true
   }
 
-  function scanBinds() {
-    enqueueWork(["hyprctl", "-j", "binds"], function(text, code) {
-      if (Number(code) !== 0) return
-      root.applyBindPlan(Binds.applyScan(text))
-    })
-  }
-
-  function liveBind(item) {
-    enqueueWork(["hyprctl", "keyword", "bind", Binds.hyprKeywordArg(item)])
-  }
-
-  function installBinds() {
-    enqueueWork(["hyprctl", "-j", "binds"], function(text, code) {
-      if (Number(code) !== 0) {
-        root.offerNote = "could not read keybinds"
-        return
-      }
-      var plan = Binds.applyScan(text)
-      if (!plan.toAdd || !plan.toAdd.length) {
-        root.applyBindPlan(plan)
-        return
-      }
-      var lua = Binds.luaBlock(plan.toAdd)
-      enqueueWork(["python3", root.pluginDir + "/compat/install-binds.py", root.pluginId, lua], function(out, instCode) {
-        if (Number(instCode) !== 0) {
-          root.offerNote = "could not write ~/.config/hypr/bindings.lua"
-          return
-        }
-        for (var i = 0; i < plan.toAdd.length; i++)
-          root.liveBind(plan.toAdd[i])
-        enqueueWork(["hyprctl", "keyword", "unbind", "SUPER CTRL, SPACE"])
-        enqueueWork(["hyprctl", "keyword", "unbind", "SUPER CTRL, F"])
-        Qt.callLater(root.scanBinds)
-      })
-    })
+  function stripBinds() {
+    enqueueWork(["python3", root.pluginDir + "/compat/install-binds.py", "--remove", root.pluginId])
+    enqueueWork(["hyprctl", "keyword", "unbind", "SUPER ALT, F"])
+    enqueueWork(["hyprctl", "keyword", "unbind", "SUPER ALT, PERIOD"])
+    enqueueWork(["hyprctl", "keyword", "unbind", "SUPER CTRL, SPACE"])
+    enqueueWork(["hyprctl", "keyword", "unbind", "SUPER CTRL, F"])
+    enqueueWork(["hyprctl", "keyword", "unbind", "SUPER, PERIOD"])
   }
 
   BarIconButton {
@@ -117,7 +64,7 @@ BarWidget {
     text: "\uf002"
     slotSize: Style.bar.statusSlot
     fontSize: Style.font.caption
-    tooltipText: root.chipTooltip
+    tooltipText: "Preview — search files in your home folder"
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.LeftButton || buttonCode === Qt.RightButton)
         root.toggleOverlay()
@@ -129,23 +76,14 @@ BarWidget {
     running: false
     stdout: StdioCollector { id: workOut; waitForEnd: true }
     onExited: function(exitCode) {
-      var collected = workOut.text
       var job = root.workCurrent
       root.workCurrent = null
       if (job && job.done) {
-        try { job.done(collected, exitCode) }
-        catch (e) { console.warn("preview: bar bind callback failed", e) }
+        try { job.done(workOut.text, exitCode) } catch (e) {}
       }
       root.runWork()
     }
   }
 
-  Timer {
-    interval: 4000
-    repeat: true
-    running: true
-    onTriggered: root.scanBinds()
-  }
-
-  Component.onCompleted: Qt.callLater(root.scanBinds)
+  Component.onCompleted: Qt.callLater(root.stripBinds)
 }

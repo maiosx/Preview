@@ -20,22 +20,31 @@ Item {
   property bool searchRunning: false
   property string previewPath: ""
 
-  readonly property string searchBody: "q=\"$1\"; home=\"$2\"; fd_bin=$(command -v fd || command -v fdfind || true); " +
-    "if [ -z \"$q\" ]; then exit 0; fi; " +
-    "if [ -n \"$fd_bin\" ]; then \"$fd_bin\" -a -H -i -F --max-results 50 --max-depth 16 -E .git -E node_modules -E .cache -- \"$q\" \"$home\"; exit 0; fi; " +
-    "if command -v plocate >/dev/null 2>&1; then plocate -i -l 50 -N -- \"$q\"; exit 0; fi; " +
+  readonly property string searchBody: "q=\"$1\"; home=\"$2\"; " +
+    "case \"$home\" in /home/*|/root) ;; *) exit 0 ;; esac; " +
+    "if [ -z \"$q\" ] || [ ! -d \"$home\" ]; then exit 0; fi; " +
+    "fd_bin=$(command -v fd || command -v fdfind || true); " +
+    "if [ -n \"$fd_bin\" ]; then " +
+    "  \"$fd_bin\" -a -H -i -F --max-results 50 --max-depth 12 " +
+    "    -E .git -E node_modules -E .cache -E .local/share/Trash -E .local/share/flatpak " +
+    "    -- \"$q\" \"$home\"; " +
+    "  exit 0; " +
+    "fi; " +
     "find \"$home\" -maxdepth 8 \\( -name .git -o -name node_modules -o -name .cache \\) -prune -o -iname \"*$q*\" -print 2>/dev/null | head -n 50"
 
   function escapeHtml(s) {
     return String(s || "").replace(/&/g, "&" + "amp;").replace(/</g, "&" + "lt;").replace(/>/g, "&" + "gt;")
   }
+
   function applyPathList(text, usedBackend) {
     var lines = String(text || "").split(/\r?\n/)
     var hits = []
     var seen = ({})
+    var prefix = root.home + "/"
     for (var i = 0; i < lines.length && hits.length < 40; i++) {
       var p = String(lines[i] || "").replace(/^\s+|\s+$/g, "").replace(/^'+|'+$/g, "")
       if (!p.length || p.charAt(0) !== "/") continue
+      if (p.indexOf(prefix) !== 0 && p !== root.home) continue
       if (seen[p]) continue
       seen[p] = true
       var slash = p.lastIndexOf("/")
@@ -51,7 +60,9 @@ Item {
     root.resultsRevision += 1
     root.lastStatus = "hits:" + hits.length
   }
+
   function sanitize(q) { return String(q || "").replace(/[*?[\]\\'"]/g, "") }
+
   function query(q) {
     root.searchNeedle = root.sanitize(q)
     if (!root.searchNeedle.length) {
@@ -65,6 +76,7 @@ Item {
     Qt.callLater(root.startSearch)
     return String(root.resultsRevision + 1)
   }
+
   function startSearch() {
     if (searchProc.running) { searchProc.running = false; Qt.callLater(root.startSearch); return }
     searchProc.command = ["sh", "-c", root.searchBody, "preview-search", root.searchNeedle, root.home]
@@ -72,6 +84,7 @@ Item {
     root.searchRunning = true
     root.lastStatus = "searching"
   }
+
   function applyTextPreview(raw) {
     var s = String(raw || "")
     var binary = s.indexOf("\0") >= 0
@@ -90,6 +103,7 @@ Item {
     }
     root.previewRevision += 1
   }
+
   function requestPreview(path, page) {
     var p = String(path || "")
     root.previewPath = p
@@ -110,6 +124,7 @@ Item {
     previewFile.reload()
     return String(root.previewRevision + 1)
   }
+
   function preview(arg) {
     var path = String(arg || "")
     if (path.length && path.charAt(0) === "{") {
@@ -138,6 +153,7 @@ Item {
       lastStatus: root.lastStatus
     })
   }
+
   FileView {
     id: previewFile
     printErrors: false
