@@ -23,18 +23,37 @@ Item {
   property real diskUsedFrac: 0
   property double diskTotal: 0
 
-  readonly property string searchBody: "q=\"$1\"; home=\"$2\"; " +
+  readonly property string searchBody: "q=\"$1\"; start=\"$2\"; " +
+    "home=$(cd \"$start\" 2>/dev/null && pwd -P || printf '%s' \"$start\"); " +
     "case \"$home\" in /home/*|/root) ;; *) exit 0 ;; esac; " +
     "if [ -z \"$q\" ] || [ ! -d \"$home\" ]; then exit 0; fi; " +
+    "inside() { while IFS= read -r p; do " +
+    "  [ -z \"$p\" ] && continue; " +
+    "  d=$(dirname \"$p\"); b=$(basename \"$p\"); " +
+    "  rp=$(cd \"$d\" 2>/dev/null && printf '%s/%s\\n' \"$(pwd -P)\" \"$b\" || printf '%s\\n' \"$p\"); " +
+    "  case \"$rp\" in \"$home\"|\"$home\"/*) printf '%s\\n' \"$rp\" ;; esac; " +
+    "done; }; " +
     "fd_bin=$(command -v fd || command -v fdfind || true); " +
     "if [ -n \"$fd_bin\" ]; then " +
-    "  \"$fd_bin\" -a -H -i -F --max-results 50 --max-depth 12 " +
-    "    -E .git -E node_modules -E .cache -E .local/share/Trash -E .local/share/flatpak " +
-    "    -- \"$q\" \"$home\"; " +
+    "  \"$fd_bin\" -a -i -F -t f --one-file-system --max-results 80 --max-depth 8 " +
+    "    -E node_modules -E .git -E dist -E target -E __pycache__ -E .venv -E venv " +
+    "    -E .cache -E .local -E .npm -E .cargo -E .flatpak " +
+    "    -- \"$q\" \"$home\" 2>/dev/null | inside; " +
     "  exit 0; " +
     "fi; " +
-    "find \"$home\" -maxdepth 8 \\( -name .git -o -name node_modules -o -name .cache \\) -prune -o -iname \"*$q*\" -print 2>/dev/null | head -n 50"
+    "find -P \"$home\" -xdev -maxdepth 8 " +
+    "  \\( -name node_modules -o -name .git -o -name dist -o -name target -o -name .venv -o -name .cache -o -name .local \\) -prune " +
+    "  -o -type f -iname \"*$q*\" -print 2>/dev/null | inside | head -n 50"
 
+  function underHome(p) {
+    var home = String(root.home || "")
+    if (home.length < 6 || home === "/" || home === "/home") return false
+    while (home.length > 1 && home.charAt(home.length - 1) === "/") home = home.slice(0, home.length - 1)
+    if (p === home) return true
+    if (p.indexOf(home + "/") !== 0) return false
+    if (p.indexOf("/../") >= 0) return false
+    return true
+  }
   function escapeHtml(s) {
     return String(s || "").replace(/&/g, "&" + "amp;").replace(/</g, "&" + "lt;").replace(/>/g, "&" + "gt;")
   }
@@ -42,11 +61,10 @@ Item {
     var lines = String(text || "").split(/\r?\n/)
     var hits = []
     var seen = ({})
-    var prefix = root.home + "/"
     for (var i = 0; i < lines.length && hits.length < 40; i++) {
       var p = String(lines[i] || "").replace(/^\s+|\s+$/g, "").replace(/^'+|'+$/g, "")
       if (!p.length || p.charAt(0) !== "/") continue
-      if (p.indexOf(prefix) !== 0 && p !== root.home) continue
+      if (!root.underHome(p)) continue
       if (seen[p]) continue
       seen[p] = true
       var slash = p.lastIndexOf("/")
@@ -132,6 +150,7 @@ Item {
     var p = String(path || "")
     root.previewPath = p
     if (!p.length) { root.lastPreview = ({}); root.previewRevision += 1; return "0" }
+    if (!root.underHome(p)) { root.lastPreview = ({}); root.previewRevision += 1; return "0" }
     var kind = Format.kindOf(p, false)
     if (kind === "image") {
       root.lastPreview = Format.localPreview(p)
@@ -158,13 +177,13 @@ Item {
   function prefetch(path) { return root.requestPreview(path, 1) }
   function openPath(path) {
     var p = String(path || "")
-    if (!p.length) return "empty"
+    if (!p.length || !root.underHome(p)) return "empty"
     var quoted = "'" + p.replace(/'/g, "'\\''") + "'"
     Quickshell.execDetached(["hyprctl", "dispatch", "exec", "xdg-open " + quoted])
     return "ok"
   }
   function reveal(path) {
-    if (!path) return "empty"
+    if (!path || !root.underHome(String(path))) return "empty"
     var quoted = "'" + String(path).replace(/'/g, "'\\''") + "'"
     Quickshell.execDetached(["hyprctl", "dispatch", "exec", "xdg-open " + quoted])
     return "ok"
@@ -178,6 +197,7 @@ Item {
       indexing: root.searchRunning,
       backend: root.backend,
       lastStatus: root.lastStatus,
+      home: root.home,
       diskLabel: root.diskLabel,
       diskUsedFrac: root.diskUsedFrac,
       diskTotal: root.diskTotal
