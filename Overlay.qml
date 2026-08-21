@@ -74,6 +74,7 @@ Item {
     root.lastQueryRev = -1
     root.previewResult = ({})
     root.activePath = ""
+    root.enableLayerBlur()
     Qt.callLater(function() { searchField.forceActiveFocus() })
   }
   function close() { root.opened = false; root.pinned = false }
@@ -109,6 +110,12 @@ Item {
     root.copyText(p)
     root.locFlash = "copied"
     locFlashTimer.restart()
+  }
+  function enableLayerBlur() {
+    Quickshell.execDetached(["hyprctl", "keyword", "layerrule", "blur,preview"])
+    Quickshell.execDetached(["hyprctl", "keyword", "layerrule", "ignorealpha 0,preview"])
+    Quickshell.execDetached(["hyprctl", "keyword", "layerrule", "xray 0,preview"])
+    Quickshell.execDetached(["hyprctl", "keyword", "layerrule", "blur,quickshell:preview"])
   }
 
   function callIpc(method, arg) {
@@ -207,8 +214,12 @@ Item {
   function pinToggle() {
     if (!root.currentHit() && !root.activePath.length) return
     root.pinned = !root.pinned
-    if (root.pinned) Qt.callLater(function() { pinnedPane.forceActiveFocus() })
-    else Qt.callLater(function() { searchField.forceActiveFocus() })
+    if (root.pinned) {
+      root.enableLayerBlur()
+      Qt.callLater(function() { pinnedPane.forceActiveFocus() })
+    } else {
+      Qt.callLater(function() { searchField.forceActiveFocus() })
+    }
   }
 
   Process {
@@ -445,11 +456,16 @@ Item {
       id: pinnedPane
       anchors.fill: parent
       visible: root.pinned
-      color: root.background
+      color: "transparent"
       focus: root.pinned
       Keys.onPressed: function(event) {
         if (event.key === Qt.Key_Escape || event.key === Qt.Key_Space) { root.pinToggle(); event.accepted = true }
         else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) { root.revealCurrent(); event.accepted = true }
+      }
+      Rectangle {
+        id: blurLayer
+        anchors.fill: parent
+        color: Qt.rgba(root.background.r, root.background.g, root.background.b, 0.52)
       }
       PreviewPane {
         anchors.fill: parent
