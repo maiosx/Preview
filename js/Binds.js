@@ -8,13 +8,13 @@ var ALT = 8
 
 var CANDIDATES = [
     {
-        keys: "SUPER + CTRL + SPACE",
-        modmask: SUPER + CTRL,
-        key: "SPACE",
+        keys: "SUPER + ALT + F",
+        modmask: SUPER + ALT,
+        key: "F",
         desc: "Preview",
         cmd: "omarchy-shell shell toggle io.github.maiosx.preview '{}'",
         alternates: [
-            { keys: "SUPER + CTRL + F", modmask: SUPER + CTRL, key: "F" }
+            { keys: "SUPER + ALT + PERIOD", modmask: SUPER + ALT, key: "PERIOD" }
         ]
     }
 ]
@@ -186,9 +186,9 @@ function luaBlock(items) {
 }
 
 function hyprKeywordArg(item) {
-    var keys = String(item.chosen || item.keys || "SUPER + CTRL + SPACE")
+    var keys = String(item.chosen || item.keys || "SUPER + ALT + F")
     var parts = keys.split(" + ")
-    var key = parts.length ? parts.pop() : "SPACE"
+    var key = parts.length ? parts.pop() : "F"
     var mods = parts.join(" ")
     var cmd = String(item.cmd || "omarchy-shell shell toggle io.github.maiosx.preview '{}'")
     return mods + ", " + key + ", exec, " + cmd

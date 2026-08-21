@@ -32,7 +32,7 @@ BarWidget {
   }
 
   readonly property string chipTooltip: {
-    var keys = root.hotkeyLabel.length ? root.hotkeyLabel : "Super+Ctrl+Space"
+    var keys = root.hotkeyLabel.length ? root.hotkeyLabel : "Super+Alt+F"
     return "Preview  " + keys
   }
 
@@ -103,6 +103,8 @@ BarWidget {
         }
         for (var i = 0; i < plan.toAdd.length; i++)
           root.liveBind(plan.toAdd[i])
+        enqueueWork(["hyprctl", "keyword", "unbind", "SUPER CTRL, SPACE"])
+        enqueueWork(["hyprctl", "keyword", "unbind", "SUPER CTRL, F"])
         Qt.callLater(root.scanBinds)
       })
     })
