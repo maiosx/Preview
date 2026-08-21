@@ -1,0 +1,17 @@
+#!/bin/sh
+# File-manager / terminal bridge: summon Preview on a path, or toggle the finder.
+set -eu
+id="io.github.maiosx.preview"
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+  printf '%s\n' "usage: quicklook [path]" "  no args  toggle the finder overlay" "  path     summon a preview of that file"
+  exit 0
+fi
+if [ -n "${1:-}" ]; then
+  path=$1
+  case "$path" in
+    /*) ;;
+    *) path=$(pwd)/$path ;;
+  esac
+  exec omarchy-shell shell summon "$id" "{\"path\":\"$path\"}"
+fi
+exec omarchy-shell shell toggle "$id" '{}'
