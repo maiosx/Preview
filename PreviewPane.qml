@@ -57,9 +57,18 @@ Item {
       clip: true
       boundsBehavior: Flickable.StopAtBounds
       flickableDirection: Flickable.VerticalFlick
-      interactive: true
+      interactive: false
       contentWidth: width
       contentHeight: Math.max(height, body.contentHeight)
+      WheelHandler {
+        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+        onWheel: function(event) {
+          var maxY = Math.max(0, flick.contentHeight - flick.height)
+          var dy = event.pixelDelta.y !== 0 ? event.pixelDelta.y : event.angleDelta.y / 8
+          flick.contentY = Math.max(0, Math.min(maxY, flick.contentY - dy))
+          event.accepted = true
+        }
+      }
       ScrollBar.vertical: ScrollBar {
         id: vbar
         parent: flick.parent
@@ -89,6 +98,7 @@ Item {
         readOnly: true
         selectByMouse: root.selectable
         persistentSelection: true
+        mouseSelectionMode: TextEdit.SelectCharacters
         text: root.bodyText
         textFormat: TextEdit.PlainText
         color: root.foreground
@@ -97,6 +107,10 @@ Item {
         wrapMode: TextEdit.Wrap
         activeFocusOnPress: root.selectable
         cursorVisible: false
+        HoverHandler {
+          cursorShape: Qt.IBeamCursor
+          enabled: root.selectable
+        }
       }
     }
 
