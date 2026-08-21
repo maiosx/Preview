@@ -76,6 +76,11 @@ Item {
     if (!root.results || root.selectedIndex < 0 || root.selectedIndex >= root.results.length) return null
     return root.results[root.selectedIndex]
   }
+  function currentPath() {
+    if (root.activePath.length) return root.activePath
+    var hit = root.currentHit()
+    return hit && hit.path ? String(hit.path) : ""
+  }
 
   function callIpc(method, arg) {
     var job = { method: String(method || ""), arg: arg === undefined || arg === null ? "" : String(arg) }
@@ -150,14 +155,24 @@ Item {
     var quoted = "'" + p.replace(/'/g, "'\\''") + "'"
     Quickshell.execDetached(["hyprctl", "dispatch", "exec", "xdg-open " + quoted])
   }
+  function launchDir(path) {
+    var p = String(path || "")
+    if (!p.length) return
+    var slash = p.lastIndexOf("/")
+    var dir = slash > 0 ? p.slice(0, slash) : p
+    var quoted = "'" + dir.replace(/'/g, "'\\''") + "'"
+    Quickshell.execDetached(["hyprctl", "dispatch", "exec", "xdg-open " + quoted])
+  }
   function openCurrent() {
-    var p = root.activePath
-    if (!p.length) {
-      var hit = root.currentHit()
-      if (hit && hit.path) p = String(hit.path)
-    }
+    var p = root.currentPath()
     if (!p.length) return
     root.launchFile(p)
+    Qt.callLater(root.close)
+  }
+  function revealCurrent() {
+    var p = root.currentPath()
+    if (!p.length) return
+    root.launchDir(p)
     Qt.callLater(root.close)
   }
   function pinToggle() {
@@ -399,7 +414,7 @@ Item {
       focus: root.pinned
       Keys.onPressed: function(event) {
         if (event.key === Qt.Key_Escape || event.key === Qt.Key_Space) { root.pinToggle(); event.accepted = true }
-        else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) { root.openCurrent(); event.accepted = true }
+        else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) { root.revealCurrent(); event.accepted = true }
       }
       PreviewPane {
         anchors.fill: parent
@@ -425,7 +440,7 @@ Item {
         Text {
           id: openLabel
           anchors.centerIn: parent
-          text: "Open"
+          text: "Open folder"
           color: openHover.containsMouse ? root.background : root.foreground
           font.pixelSize: Style.font.body
           font.bold: true
@@ -435,14 +450,14 @@ Item {
           anchors.fill: parent
           hoverEnabled: true
           cursorShape: Qt.PointingHandCursor
-          onClicked: root.openCurrent()
+          onClicked: root.revealCurrent()
         }
       }
       Text {
         anchors.bottom: parent.bottom
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottomMargin: 16
-        text: "Space or Esc  ·  back     Enter  ·  open"
+        text: "Space or Esc  ·  back     Enter  ·  open folder"
         color: root.foreground
         opacity: 0.5
         font.pixelSize: Style.font.caption
