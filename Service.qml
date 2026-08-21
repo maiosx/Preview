@@ -1,9 +1,6 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
-import "js/Protocol.js" as Protocol
-import "js/Config.js" as Config
-import "js/Fallback.js" as Fallback
 import "js/Format.js" as Format
 
 Item {
@@ -14,121 +11,84 @@ Item {
   property var pluginRegistry: null
 
   readonly property string pluginId: "io.github.maiosx.preview"
-  readonly property string pluginDir: {
-    var u = String(Qt.resolvedUrl("."))
-    if (u.indexOf("file://") === 0)
-      u = u.slice(7)
-    if (u.length > 1 && u.charAt(u.length - 1) === "/")
-      u = u.slice(0, u.length - 1)
-    return u
-  }
-
-  property var roots: []
-  property int watchCap: 2000
-  property int cacheMb: 500
-  property int maxFiles: 500000
-  property var extraExclude: []
-
   readonly property string home: Quickshell.env("HOME") || "/tmp"
-  readonly property string helperBin: pluginDir + "/bin/quicklookd"
-  readonly property string helperSh: pluginDir + "/compat/quicklookd.sh"
 
-  property string helperCmd: helperSh
-  property bool helperIsBinary: false
-  property bool helperReady: false
   property var lastResults: []
   property var lastPreview: ({})
-  property var lastCaps: ({})
   property int resultsRevision: 0
   property int previewRevision: 0
-  property int statusRevision: 0
-  property bool indexing: false
-  property real indexProgress: 0
-  property string backend: "compat"
-  property string lastStatus: "starting"
-  property var oneshotQueue: []
-  property var oneshotCurrent: null
+  property string backend: "search"
+  property string lastStatus: "ready"
+  property string searchNeedle: ""
+  property bool searchRunning: false
 
-  function helperLaunch(oneshotJson) {
-    var cmd
-    if (root.helperIsBinary) {
-      cmd = [root.helperBin, "--plugin-dir", root.pluginDir]
-    } else {
-      cmd = ["python3", root.pluginDir + "/compat/quicklookd.py", "--plugin-dir", root.pluginDir]
+  readonly property string searchBody: "q=\"$1\"; home=\"$2\"; fd_bin=$(command -v fd || command -v fdfind || true); " +
+    "if [ -z \"$q\" ]; then " +
+    "  if [ -n \"$fd_bin\" ]; then \"$fd_bin\" -a -H -t f --changed-within 30d --max-results 40 --max-depth 8 -E .git -E node_modules -E .cache . \"$home\"; " +
+    "  else find \"$home\" -maxdepth 3 -type f ! -path '*/.git/*' ! -path '*/node_modules/*' ! -path '*/.cache/*' 2>/dev/null | head -n 40; fi; " +
+    "  exit 0; " +
+    "fi; " +
+    "if [ -n \"$fd_bin\" ]; then \"$fd_bin\" -a -H -i -F --max-results 50 --max-depth 16 -E .git -E node_modules -E .cache -- \"$q\" \"$home\"; exit 0; fi; " +
+    "if command -v plocate >/dev/null 2>&1; then plocate -i -l 50 -N -- \"$q\"; exit 0; fi; " +
+    "find \"$home\" -maxdepth 8 \\( -name .git -o -name node_modules -o -name .cache \\) -prune -o -iname \"*$q*\" -print 2>/dev/null | head -n 50"
+
+  function applyPathList(text, usedBackend) {
+    var lines = String(text || "").split(/\r?\n/)
+    var hits = []
+    var seen = ({})
+    for (var i = 0; i < lines.length && hits.length < 40; i++) {
+      var p = String(lines[i] || "").replace(/^\s+|\s+$/g, "").replace(/^'+|'+$/g, "")
+      if (!p.length || p.charAt(0) !== "/")
+        continue
+      if (seen[p])
+        continue
+      seen[p] = true
+      var slash = p.lastIndexOf("/")
+      var name = slash >= 0 ? p.slice(slash + 1) : p
+      if (!name.length)
+        continue
+      hits.push({
+        path: p,
+        name: name,
+        kind: Format.kindOf(p, false),
+        score: 100,
+        mtime: 0,
+        size: 0
+      })
     }
-    if (oneshotJson !== undefined && oneshotJson !== null) {
-      cmd.push("--oneshot")
-      cmd.push(String(oneshotJson))
-    }
-    return cmd
-  }
-
-  function enqueueOneshot(obj) {
-    if (!obj)
-      return
-    if (obj.cmd === "query") {
-      var kept = []
-      for (var i = 0; i < oneshotQueue.length; i++) {
-        if (oneshotQueue[i].cmd !== "query")
-          kept.push(oneshotQueue[i])
-      }
-      oneshotQueue = kept
-    }
-    oneshotQueue.push(obj)
-    runOneshot()
-  }
-
-  function runOneshot() {
-    if (oneshotProc.running || root.oneshotCurrent)
-      return
-    if (!oneshotQueue.length)
-      return
-    root.oneshotCurrent = oneshotQueue.shift()
-    oneshotProc.command = root.helperLaunch(JSON.stringify(root.oneshotCurrent))
-    oneshotProc.running = true
-  }
-
-  function onHelperLine(line) {
-    var msg = Protocol.parseLine(line)
-    if (!msg)
-      return
-    if (msg.kind === "results") {
-      root.lastResults = msg.results || []
-      root.backend = String(msg.backend || root.backend)
-      if (msg.indexing !== undefined)
-        root.indexing = !!msg.indexing
-      if (msg.progress !== undefined)
-        root.indexProgress = Number(msg.progress) || 0
-      root.resultsRevision += 1
-    } else if (msg.kind === "preview") {
-      root.lastPreview = msg.preview || {}
-      root.previewRevision += 1
-    } else if (msg.kind === "status") {
-      root.lastCaps = msg.status || {}
-      root.statusRevision += 1
-    }
-  }
-
-  function localQuery(q) {
-    var hits = Fallback.search(Fallback.defaultSamples(root.pluginDir), q, 40)
     root.lastResults = hits
-    root.backend = "local"
+    root.backend = usedBackend || "search"
     root.resultsRevision += 1
-    return hits
+    root.lastStatus = "hits:" + hits.length
+  }
+
+  function sanitize(q) {
+    return String(q || "").replace(/[*?[\]\\'"]/g, "")
   }
 
   function query(q) {
-    if (!root.helperReady)
-      root.localQuery(q)
-    var req = Protocol.queryRequest(q)
-    root.enqueueOneshot(req)
-    return req.id
+    root.searchNeedle = root.sanitize(q)
+    Qt.callLater(root.startSearch)
+    return String(root.resultsRevision + 1)
+  }
+
+  function startSearch() {
+    if (searchProc.running) {
+      searchProc.running = false
+      Qt.callLater(root.startSearch)
+      return
+    }
+    searchProc.command = ["sh", "-c", root.searchBody, "preview-search", root.searchNeedle, root.home]
+    searchProc.running = true
+    root.searchRunning = true
+    root.lastStatus = "searching"
   }
 
   function requestPreview(path, page) {
-    var req = Protocol.previewRequest(path, page)
-    root.enqueueOneshot(req)
-    return req.id
+    var p = String(path || "")
+    root.lastPreview = Format.localPreview(p)
+    root.previewRevision += 1
+    return String(root.previewRevision)
   }
 
   function preview(arg) {
@@ -141,11 +101,11 @@ Item {
         page = Number(o.page) || 1
       } catch (e) {}
     }
-    return String(root.requestPreview(path, page))
+    return root.requestPreview(path, page)
   }
 
   function prefetch(path) {
-    return String(root.requestPreview(path, 1))
+    return root.requestPreview(path, 1)
   }
 
   function openPath(path) {
@@ -165,63 +125,37 @@ Item {
     return JSON.stringify({
       resultsRevision: root.resultsRevision,
       previewRevision: root.previewRevision,
-      statusRevision: root.statusRevision,
       results: root.lastResults,
       preview: root.lastPreview,
-      indexing: root.indexing,
-      indexProgress: root.indexProgress,
+      indexing: root.searchRunning,
       backend: root.backend,
-      lastCaps: root.lastCaps,
-      lastStatus: root.lastStatus,
-      helperCmd: root.helperCmd
+      lastStatus: root.lastStatus
     })
   }
 
   Process {
-    id: oneshotProc
+    id: searchProc
     running: false
     stdout: StdioCollector {
-      id: oneshotOut
-      waitForEnd: true
-    }
-    onExited: {
-      var text = String(oneshotOut.text || "").trim()
-      var job = root.oneshotCurrent
-      root.oneshotCurrent = null
-      if (text.length) {
-        var lines = text.split("\n")
-        root.onHelperLine(lines[lines.length - 1])
-      } else if (job && job.cmd === "query") {
-        root.localQuery(job.q || "")
-      } else if (job && (job.cmd === "preview" || job.cmd === "page")) {
-        root.lastPreview = Format.localPreview(job.path)
-        root.previewRevision += 1
-      }
-      root.runOneshot()
-    }
-  }
-
-  Process {
-    id: whichProc
-    command: ["sh", "-c", "test -x \"$1\" && echo binary || echo missing", "sh", root.helperBin]
-    running: false
-    stdout: StdioCollector {
+      id: searchOut
       waitForEnd: true
       onStreamFinished: {
-        var out = String(text || "").trim()
-        root.helperIsBinary = (out === "binary")
-        root.helperCmd = root.helperIsBinary ? root.helperBin : "python3"
-        root.helperReady = true
-        root.lastStatus = "ready"
-        root.query("")
+        root.applyPathList(text, "search")
+        root.searchRunning = false
       }
+    }
+    onExited: function(code) {
+      root.searchRunning = false
+      var collected = String(searchOut.text || "")
+      if (root.lastStatus === "searching")
+        root.applyPathList(collected, "search")
     }
   }
 
   IpcHandler {
     target: "io.github.maiosx.preview"
     function ping(arg: string): string { return "ok" }
-    function status(arg: string): string { return "{\"ok\":true}" }
+    function status(arg: string): string { return root.snapshotJson() }
     function snapshot(arg: string): string { return root.snapshotJson() }
     function query(q: string): string { return String(root.query(q)) }
     function preview(path: string): string { return root.preview(path) }
@@ -235,15 +169,5 @@ Item {
     }
   }
 
-  Component.onCompleted: {
-    Config.applyInline({
-      roots: root.roots,
-      watchCap: root.watchCap,
-      cacheMb: root.cacheMb,
-      maxFiles: root.maxFiles,
-      extraExclude: root.extraExclude
-    }, root.home)
-    Protocol.reset()
-    whichProc.running = true
-  }
+  Component.onCompleted: root.query("")
 }

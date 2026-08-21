@@ -16,10 +16,11 @@ Item {
   property string queryText: ""
   property int selectedIndex: 0
   property var results: []
+  property int resultsTick: 0
   property var previewResult: ({})
   property bool previewLoading: false
-  property int lastQueryRev: 0
-  property int lastPreviewRev: 0
+  property int lastQueryRev: -1
+  property int lastPreviewRev: -1
   property string backend: ""
   property var ipcQueue: []
   property var ipcCurrent: null
@@ -34,15 +35,20 @@ Item {
 
   function serviceRef() {
     try {
-      if (root.pluginRegistry && typeof root.pluginRegistry.serviceFor === "function")
-        return root.pluginRegistry.serviceFor(root.pluginId)
+      if (root.pluginRegistry && typeof root.pluginRegistry.serviceFor === "function") {
+        var s = root.pluginRegistry.serviceFor(root.pluginId)
+        if (s && s !== root)
+          return s
+      }
     } catch (e) {}
     return null
   }
+
   function open(payloadJson) {
     root.opened = true
     root.queryText = ""
     searchField.text = ""
+    root.lastQueryRev = -1
     root.requestQuery("")
     Qt.callLater(function() { searchField.forceActiveFocus() })
   }
@@ -51,18 +57,22 @@ Item {
   function query(arg) { return root.callIpc("query", arg) }
   function snapshot(arg) { return root.callIpc("snapshot", arg) }
   function preview(arg) { return root.callIpc("preview", arg) }
+
   function callIpc(method, arg) {
     var job = { method: String(method || ""), arg: arg === undefined || arg === null ? "" : String(arg) }
     var svc = root.serviceRef()
-    if (svc && svc !== root && typeof svc[job.method] === "function") {
+    if (svc && typeof svc[job.method] === "function") {
       var result = svc[job.method](job.arg)
       if (job.method === "snapshot")
         root.applySnapshot(result)
+      else if (job.method === "query" && svc.lastResults)
+        root.setResults(svc.lastResults)
       return result === undefined || result === null ? "ok" : String(result)
     }
     root.ipcQueue.push(job)
     root.runIpc()
   }
+
   function runIpc() {
     if (ipcProc.running || root.ipcCurrent || !root.ipcQueue.length)
       return
@@ -70,26 +80,43 @@ Item {
     ipcProc.command = ["omarchy-shell", root.pluginId, root.ipcCurrent.method, root.ipcCurrent.arg]
     ipcProc.running = true
   }
+
+  function setResults(list) {
+    var next = []
+    if (list && list.length) {
+      for (var i = 0; i < list.length; i++)
+        next.push(list[i])
+    }
+    root.results = next
+    root.resultsTick += 1
+    if (next.length) {
+      if (root.selectedIndex >= next.length)
+        root.selectedIndex = 0
+      var hit = next[root.selectedIndex]
+      if (hit && hit.path)
+        root.requestPreview(hit.path, 1)
+    }
+  }
+
   function applySnapshot(raw) {
     var snap = null
     try { snap = JSON.parse(String(raw || "")) } catch (e) { return }
     if (!snap) return
     if (snap.backend) root.backend = String(snap.backend)
-    if (snap.resultsRevision !== root.lastQueryRev) {
-      root.lastQueryRev = Number(snap.resultsRevision) || 0
-      root.results = snap.results || []
-      if (root.results.length) {
-        if (root.selectedIndex >= root.results.length) root.selectedIndex = 0
-        var hit = root.results[root.selectedIndex]
-        if (hit) root.requestPreview(hit.path, 1)
-      }
+    var rev = Number(snap.resultsRevision)
+    if (isNaN(rev)) rev = 0
+    if (rev !== root.lastQueryRev) {
+      root.lastQueryRev = rev
+      root.setResults(snap.results || [])
     }
-    if (snap.previewRevision !== root.lastPreviewRev) {
-      root.lastPreviewRev = Number(snap.previewRevision) || 0
+    var prev = Number(snap.previewRevision)
+    if (!isNaN(prev) && prev !== root.lastPreviewRev) {
+      root.lastPreviewRev = prev
       root.previewResult = snap.preview || {}
       root.previewLoading = false
     }
   }
+
   function requestQuery(q) { root.callIpc("query", q) }
   function requestPreview(path, page) {
     root.previewLoading = true
@@ -114,27 +141,31 @@ Item {
   Process {
     id: ipcProc
     running: false
-    stdout: StdioCollector { id: ipcOut; waitForEnd: true }
+    stdout: StdioCollector {
+      id: ipcOut
+      waitForEnd: true
+    }
     onExited: function() {
       var job = root.ipcCurrent
-      var text = String(ipcOut.text || "").trim()
+      var collected = String(ipcOut.text || "").trim()
       root.ipcCurrent = null
-      if (job && job.method === "snapshot" && text.length)
-        root.applySnapshot(text)
+      if (job && job.method === "snapshot" && collected.length)
+        root.applySnapshot(collected)
       root.runIpc()
     }
   }
+
   Timer {
-    interval: root.opened ? 80 : 400
+    interval: 100
     running: root.opened
     repeat: true
     onTriggered: root.callIpc("snapshot", "")
   }
   Timer {
     id: debounce
-    interval: 40
+    interval: 80
     repeat: false
-    onTriggered: { root.selectedIndex = 0; root.requestQuery(root.queryText) }
+    onTriggered: { root.selectedIndex = 0; root.lastQueryRev = -1; root.requestQuery(root.queryText) }
   }
 
   PanelWindow {
@@ -161,7 +192,12 @@ Item {
         Row {
           spacing: 12
           Text { text: "Preview"; color: root.foreground; font.pixelSize: Style.font.heading; font.bold: true }
-          Text { text: root.backend; color: root.accent; font.pixelSize: Style.font.caption; anchors.verticalCenter: parent.verticalCenter }
+          Text {
+            text: root.backend + (root.results.length ? (" · " + root.results.length) : "")
+            color: root.accent
+            font.pixelSize: Style.font.caption
+            anchors.verticalCenter: parent.verticalCenter
+          }
         }
         Rectangle {
           width: parent.width
@@ -192,7 +228,7 @@ Item {
           height: parent.height - Style.space(100)
           spacing: 12
           ListView {
-            id: results
+            id: resultsView
             width: parent.width * 0.36
             height: parent.height
             clip: true
