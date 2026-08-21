@@ -38,19 +38,55 @@ Reload if the shell was already running:
 omarchy-shell shell rescanPlugins
 ```
 
-PDF previews need Poppler (`pdftoppm`):
+PDF previews need Poppler (`pdftotext` / `pdftoppm`):
 
 ```sh
 pacman -S poppler
 ```
 
-`fd` is the fast live search backend (preferred). `plocate` is a fallback:
+`fd` is the fast live search backend:
 
 ```sh
 pacman -S fd
-# optional:
-pacman -S plocate
-sudo updatedb
+```
+
+## Uninstall
+
+Remove the plugin and reload the shell:
+
+```sh
+omarchy plugin remove io.github.maiosx.preview
+omarchy-shell shell rescanPlugins
+```
+
+That drops the search icon from the bar and the overlay. Optional leftovers:
+
+**Keybinds** — older Preview versions wrote a marked block to `~/.config/hypr/bindings.lua`. Strip it *before* removing the plugin:
+
+```sh
+python3 ~/.config/omarchy/plugins/io.github.maiosx.preview/compat/install-binds.py --remove io.github.maiosx.preview
+```
+
+If the plugin directory is already gone, delete the marked block by hand:
+
+```
+-- BEGIN io.github.maiosx.preview
+o.bind("SUPER + ALT + F", "Preview", "omarchy-shell shell toggle io.github.maiosx.preview '{}'")
+-- END io.github.maiosx.preview
+```
+
+Hyprland reloads `bindings.lua` on save. To drop a live bind immediately:
+
+```sh
+hyprctl keyword unbind "SUPER ALT, F"
+hyprctl keyword unbind "SUPER CTRL, SPACE"
+hyprctl keyword unbind "SUPER, PERIOD"
+```
+
+**Cache / history** (safe to delete):
+
+```sh
+rm -rf ~/.cache/preview ~/.local/state/preview
 ```
 
 ## Usage
@@ -189,22 +225,3 @@ sh tests/protocol.test.sh
 sh tests/compat-config.test.sh
 cargo test --manifest-path src/quicklookd/Cargo.toml
 ```
-
-## Remove
-
-If you clicked **Set hotkey**, a marked `o.bind` block lives in `~/.config/hypr/bindings.lua`. Strip that block first, then remove the plugin:
-
-```sh
-python3 ~/.config/omarchy/plugins/io.github.maiosx.preview/compat/install-binds.py --remove io.github.maiosx.preview
-omarchy plugin remove io.github.maiosx.preview
-```
-
-`Remove` on the bar chip does the same strip while the plugin is still installed. If the plugin directory is already gone, delete the marked block by hand:
-
-```
--- BEGIN io.github.maiosx.preview
-o.bind("SUPER + PERIOD", "Preview", "omarchy-shell shell toggle io.github.maiosx.preview '{}'")
--- END io.github.maiosx.preview
-```
-
-Hyprland reloads `bindings.lua` on save. The plugin never calls `hl.unbind`.
