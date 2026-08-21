@@ -23,6 +23,8 @@ Item {
   property real diskUsedFrac: 0
   property double diskTotal: 0
 
+  readonly property int previewBytes: 200000
+
   readonly property string searchBody: "q=\"$1\"; start=\"$2\"; " +
     "home=$(cd \"$start\" 2>/dev/null && pwd -P || printf '%s' \"$start\"); " +
     "case \"$home\" in /home/*|/root) ;; *) exit 0 ;; esac; " +
@@ -44,6 +46,13 @@ Item {
     "find -P \"$home\" -xdev -maxdepth 8 " +
     "  \\( -name node_modules -o -name .git -o -name dist -o -name target -o -name .venv -o -name .cache -o -name .local \\) -prune " +
     "  -o -type f -iname \"*$q*\" -print 2>/dev/null | inside | head -n 50"
+
+  readonly property string readBody: "head -c 200000 \"$1\""
+
+  readonly property string pdfBody: "if ! command -v pdftotext >/dev/null 2>&1; then printf '%s\\n' POPPLER_MISSING; exit 0; fi; " +
+    "ulimit -t 3 2>/dev/null; ulimit -v 524288 2>/dev/null; ulimit -f 4096 2>/dev/null; " +
+    "if command -v timeout >/dev/null 2>&1; then exec timeout -k 1 4 pdftotext -f 1 -l 1 -layout \"$1\" -; " +
+    "else exec pdftotext -f 1 -l 1 -layout \"$1\" -; fi"
 
   function underHome(p) {
     var home = String(root.home || "")
@@ -131,8 +140,8 @@ Item {
   function applyTextPreview(raw) {
     var s = String(raw || "")
     var binary = s.indexOf("\0") >= 0
-    var large = s.length > 200000
-    if (large) s = s.slice(0, 200000)
+    var large = s.length >= root.previewBytes
+    if (s.length > root.previewBytes) s = s.slice(0, root.previewBytes)
     if (binary) {
       var hex = ""
       var n = Math.min(s.length, 256)
@@ -140,9 +149,16 @@ Item {
         var c = s.charCodeAt(i) & 255
         hex += (c < 16 ? "0" : "") + c.toString(16) + ((i + 1) % 16 === 0 ? "\n" : " ")
       }
-      root.lastPreview = { kind: "hex", path: root.previewPath, label: Format.basename(root.previewPath), hex: hex }
+      root.lastPreview = { kind: "hex", path: root.previewPath, label: Format.basename(root.previewPath), hex: hex, text: hex }
     } else {
-      root.lastPreview = { kind: "code", path: root.previewPath, html: "<pre>" + root.escapeHtml(s) + "</pre>", large: large, label: Format.basename(root.previewPath) }
+      root.lastPreview = {
+        kind: "code",
+        path: root.previewPath,
+        html: "<pre>" + root.escapeHtml(s) + "</pre>",
+        text: s,
+        large: large,
+        label: Format.basename(root.previewPath)
+      }
     }
     root.previewRevision += 1
   }
@@ -158,13 +174,16 @@ Item {
       return String(root.previewRevision)
     }
     if (kind === "pdf") {
-      pdfProc.running = false
-      pdfProc.command = ["sh", "-c", "if command -v pdftotext >/dev/null 2>&1; then pdftotext -f 1 -l 1 -layout \"$1\" -; else echo POPPLER_MISSING; fi", "preview-pdf", p]
+      if (pdfProc.running) pdfProc.running = false
+      pdfKill.restart()
+      pdfProc.command = ["sh", "-c", root.pdfBody, "preview-pdf", p]
       pdfProc.running = true
       return String(root.previewRevision + 1)
     }
-    previewFile.path = p
-    previewFile.reload()
+    if (textProc.running) textProc.running = false
+    readKill.restart()
+    textProc.command = ["sh", "-c", root.readBody, "preview-read", p]
+    textProc.running = true
     return String(root.previewRevision + 1)
   }
   function preview(arg) {
@@ -203,15 +222,17 @@ Item {
       diskTotal: root.diskTotal
     })
   }
-  FileView {
-    id: previewFile
-    printErrors: false
-    watchChanges: false
-    onLoaded: root.applyTextPreview(text())
-    onLoadFailed: {
-      root.lastPreview = { kind: "hex", path: root.previewPath, label: "couldn't read file" }
-      root.previewRevision += 1
+  Process {
+    id: textProc
+    running: false
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        readKill.stop()
+        root.applyTextPreview(text)
+      }
     }
+    onExited: readKill.stop()
   }
   Process {
     id: pdfProc
@@ -219,6 +240,7 @@ Item {
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
+        pdfKill.stop()
         var t = String(text || "")
         if (t.indexOf("POPPLER_MISSING") === 0) {
           root.lastPreview = { kind: "pdf", path: root.previewPath, need_poppler: true, label: "PDF" }
@@ -226,6 +248,19 @@ Item {
         } else root.applyTextPreview(t)
       }
     }
+    onExited: pdfKill.stop()
+  }
+  Timer {
+    id: readKill
+    interval: 4000
+    repeat: false
+    onTriggered: { if (textProc.running) textProc.running = false }
+  }
+  Timer {
+    id: pdfKill
+    interval: 5000
+    repeat: false
+    onTriggered: { if (pdfProc.running) pdfProc.running = false }
   }
   Process {
     id: searchProc
