@@ -37,6 +37,15 @@ Item {
   property string diskLabel: ""
   property real diskUsedFrac: 0
   property string activePath: ""
+  readonly property string locationLabel: {
+    var p = String(root.activePath || "")
+    if (!p.length) return ""
+    var slash = p.lastIndexOf("/")
+    var dir = slash > 0 ? p.slice(0, slash) : p
+    var home = String(Quickshell.env("HOME") || "")
+    if (home.length && dir.indexOf(home) === 0) dir = "~" + dir.slice(home.length)
+    return dir.length ? dir : "/"
+  }
   property var tutorialRows: [
     { key: "type", action: "Search files in your home folder" },
     { key: "↑ ↓", action: "Move through results" },
@@ -420,47 +429,24 @@ Item {
         anchors.fill: parent
         anchors.leftMargin: 28
         anchors.rightMargin: 28
-        anchors.bottomMargin: 44
-        anchors.topMargin: 60
+        anchors.topMargin: 28
+        anchors.bottomMargin: 48
         preview: root.previewResult
         loading: root.previewLoading
         foreground: root.foreground
         accent: root.accent
       }
-      Rectangle {
-        anchors.top: parent.top
-        anchors.right: parent.right
-        anchors.margins: 16
-        width: Math.max(88, openLabel.implicitWidth + 28)
-        height: 36
-        radius: 8
-        color: openHover.containsMouse ? root.accent : "transparent"
-        border.color: root.accent
-        border.width: 1
-        Text {
-          id: openLabel
-          anchors.centerIn: parent
-          text: "Open folder"
-          color: openHover.containsMouse ? root.background : root.foreground
-          font.pixelSize: Style.font.body
-          font.bold: true
-        }
-        MouseArea {
-          id: openHover
-          anchors.fill: parent
-          hoverEnabled: true
-          cursorShape: Qt.PointingHandCursor
-          onClicked: root.revealCurrent()
-        }
-      }
       Text {
         anchors.bottom: parent.bottom
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottomMargin: 16
-        text: "Space or Esc  ·  back     Enter  ·  open folder"
+        width: parent.width * 0.8
+        text: root.locationLabel
         color: root.foreground
-        opacity: 0.5
+        opacity: 0.55
         font.pixelSize: Style.font.caption
+        elide: Text.ElideMiddle
+        horizontalAlignment: Text.AlignHCenter
       }
     }
   }
