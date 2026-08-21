@@ -157,12 +157,16 @@ Item {
   }
   function prefetch(path) { return root.requestPreview(path, 1) }
   function openPath(path) {
-    if (path) Quickshell.execDetached(["xdg-open", path])
+    var p = String(path || "")
+    if (!p.length) return "empty"
+    var quoted = "'" + p.replace(/'/g, "'\\''") + "'"
+    Quickshell.execDetached(["hyprctl", "dispatch", "exec", "xdg-open " + quoted])
     return "ok"
   }
   function reveal(path) {
     if (!path) return "empty"
-    Quickshell.execDetached(["sh", "-c", "if [ -d \"$1\" ]; then exec xdg-open \"$1\"; else exec xdg-open \"$(dirname \"$1\")\"; fi", "sh", path])
+    var quoted = "'" + String(path).replace(/'/g, "'\\''") + "'"
+    Quickshell.execDetached(["hyprctl", "dispatch", "exec", "xdg-open " + quoted])
     return "ok"
   }
   function snapshotJson() {
