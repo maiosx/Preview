@@ -3,7 +3,7 @@ import json, os, shutil, subprocess, sys
 from pathlib import Path
 
 HOME = Path(os.environ.get("HOME") or "/tmp")
-SKIP = {".git", "node_modules", ".cache", "target", "__pycache__", ".ssh", ".gnupg", ".local"}
+SKIP = {".git", "node_modules", ".cache", "target", "__pycache__", ".ssh", ".gnupg"}
 
 def parse_req():
     oneshot = None
@@ -82,40 +82,62 @@ def run(cmd, timeout):
     except Exception:
         return []
 
+def fd_bin():
+    return shutil.which("fd") or shutil.which("fdfind") or shutil.which("fd-find")
+
 def search(q):
     q = (q or "").strip()
     if not q:
-        return recent_files(), "recent"
-    paths = []
+        return recent_files()
+    fd = fd_bin()
+    if fd:
+        paths = run([
+            fd, "-a", "-H", "-i", "-F",
+            "--max-results", "50",
+            "--max-depth", "12",
+            "-E", ".git", "-E", "node_modules", "-E", ".cache", "-E", "target",
+            q, str(HOME),
+        ], 3)
+        return hits_from(paths, q), "fd"
     loc = shutil.which("plocate") or shutil.which("locate")
     if loc:
         paths = run([loc, "-i", "-l", "50", "-N", "--", q], 2)
-        if not paths:
-            paths = run([loc, "-i", "-l", "50", "--", q], 2)
-    if not paths and shutil.which("fd"):
-        paths = run(["fd", "-a", "-H", "-i", "--max-results", "50", q, str(HOME)], 3)
-    if not paths and shutil.which("find"):
+        if paths:
+            return hits_from(paths, q), "plocate"
+    if shutil.which("find"):
         roots = [HOME / d for d in ("Documents", "Downloads", "Desktop", "Pictures", "Videos", "Music", "Projects", "src", "code")]
         roots = [r for r in roots if r.is_dir()] or [HOME]
+        paths = []
         for root in roots:
-            chunk = run([
+            paths.extend(run([
                 "find", str(root), "-maxdepth", "6",
                 "(", "-name", ".git", "-o", "-name", "node_modules", "-o", "-name", ".cache", ")",
                 "-prune", "-o", "-iname", f"*{q}*", "-print",
-            ], 3)
-            paths.extend(chunk)
+            ], 3))
             if len(paths) >= 50:
                 break
-    return hits_from(paths, q), "compat"
+        return hits_from(paths, q), "find"
+    return [], "none"
 
 def recent_files():
+    fd = fd_bin()
+    if fd:
+        paths = run([
+            fd, "-a", "-H", "-t", "f",
+            "--changed-within", "14d",
+            "--max-results", "40",
+            "--max-depth", "6",
+            "-E", ".git", "-E", "node_modules", "-E", ".cache",
+            ".", str(HOME),
+        ], 3)
+        return hits_from(paths, ""), "fd"
     roots = [HOME / d for d in ("Documents", "Downloads", "Desktop", "Pictures")]
     roots = [r for r in roots if r.is_dir()] or [HOME]
     paths = []
     if shutil.which("find"):
         for root in roots:
             paths.extend(run(["find", str(root), "-maxdepth", "2", "-type", "f"], 2))
-    return hits_from(paths[:40], "")
+    return hits_from(paths[:40], ""), "recent"
 
 def preview(path):
     p = Path(path)
@@ -134,7 +156,16 @@ def handle(req):
         return {"id": rid, "kind": "results", "results": hits, "indexing": False, "progress": 1.0, "backend": backend}
     if cmd in ("preview", "prefetch", "page"):
         return {"id": rid, "kind": "preview", "preview": preview(str(req.get("path") or ""))}
-    return {"id": rid, "kind": "status", "status": {"helper": "compat"}, "backend": "compat"}
+    return {
+        "id": rid,
+        "kind": "status",
+        "status": {
+            "helper": "compat",
+            "fd": bool(fd_bin()),
+            "plocate": bool(shutil.which("plocate") or shutil.which("locate")),
+        },
+        "backend": "compat",
+    }
 
 def main():
     print(json.dumps(handle(parse_req())), flush=True)

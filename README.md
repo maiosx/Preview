@@ -1,43 +1,28 @@
 # Preview
 
-Fuzzy-find any file and preview it instantly: images, syntax-highlighted code, PDFs, CSVs. Space pins the preview fullscreen; Enter opens it.
+Fuzzy-find any file and preview it instantly: images, syntax-highlighted code, PDFs, CSVs. Space pins the preview fullscreen; Enter opens it. The most-missed macOS feature, native to Omarchy.
 
-This is an Omarchy shell plugin (`overlay` + `service` + `bar-widget`).
+## What it is
 
-## Install
+This is an Omarchy shell plugin (service + overlay + bar-widget). It runs inside the long-lived `omarchy-shell` process. It does not start a second Quickshell instance. The bar chip starts in `barWidget.defaultSection` (`right`). Click it to toggle the finder.
 
-```sh
-omarchy plugin add https://github.com/maiosx/Preview.git --enable
-```
-
-Then reload if the shell is already running:
+Install:
 
 ```sh
-omarchy-shell shell rescanPlugins
+omarchy plugin add --enable https://github.com/maiosx/Preview
 ```
 
-Optional PDF previews:
+PDF previews need Poppler (`pdftoppm`):
 
 ```sh
 pacman -S poppler
 ```
 
-## Usage
+`fd` is the fast live search backend (preferred). `plocate` is a fallback:
 
-| Combo | Action |
-|---|---|
-| Bar chip | Toggle finder + preview |
-| Super+. | Suggested toggle (add in `bindings.lua`) |
-| ↑ ↓ | Move selection |
-| Space | Pin / unpin fullscreen preview |
-| Enter | Open |
-| Ctrl+Enter | Reveal parent folder |
-| Esc | Unpin, then close |
-
+```sh
+pacman -S fd
+# optional:
+pacman -S plocate
+sudo updatedb
 ```
-bind = SUPER, period, exec, omarchy-shell shell toggle io.github.maiosx.preview '{}'
-```
-
-## Plugin id
-
-`io.github.maiosx.preview`
