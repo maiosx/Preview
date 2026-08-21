@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import qs.Commons
 import "js/Format.js" as Format
 
@@ -23,6 +24,7 @@ Item {
       return String(preview.html).replace(/<[^>]+>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&")
     return String((preview && preview.label) || "")
   }
+  readonly property bool showText: root.kind === "code" || root.kind === "csv" || root.kind === "hex" || root.kind === "video"
 
   Rectangle {
     anchors.fill: parent
@@ -47,16 +49,43 @@ Item {
     }
 
     Flickable {
+      id: flick
       anchors.fill: parent
       anchors.margins: 14
-      visible: root.kind === "code" || root.kind === "csv" || root.kind === "hex" || root.kind === "video"
+      anchors.rightMargin: 22
+      visible: root.showText
       clip: true
-      contentWidth: width
-      contentHeight: Math.max(height, body.implicitHeight)
       boundsBehavior: Flickable.StopAtBounds
+      flickableDirection: Flickable.VerticalFlick
+      interactive: true
+      contentWidth: width
+      contentHeight: Math.max(height, body.contentHeight)
+      ScrollBar.vertical: ScrollBar {
+        id: vbar
+        parent: flick.parent
+        anchors.top: flick.top
+        anchors.bottom: flick.bottom
+        anchors.left: flick.right
+        anchors.leftMargin: 4
+        policy: flick.contentHeight > flick.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+        implicitWidth: 8
+        contentItem: Rectangle {
+          implicitWidth: 8
+          radius: 4
+          color: root.accent
+          opacity: vbar.hovered || vbar.pressed ? 0.95 : 0.5
+        }
+        background: Rectangle {
+          implicitWidth: 8
+          radius: 4
+          color: root.foreground
+          opacity: 0.12
+        }
+      }
       TextEdit {
         id: body
-        width: parent.width
+        width: flick.width
+        height: contentHeight
         readOnly: true
         selectByMouse: root.selectable
         persistentSelection: true
