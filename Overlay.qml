@@ -35,6 +35,7 @@ Item {
   property string fontFamily: Style.font.menuFamily
   readonly property bool showTutorial: root.queryText.length === 0
   property var tutorialRows: [
+    { key: "Super+Ctrl+Space", action: "Open Preview from anywhere" },
     { key: "type", action: "Search by filename" },
     { key: "↑ ↓", action: "Move through results" },
     { key: "Space", action: "Fullscreen preview of the selected file" },
