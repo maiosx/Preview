@@ -357,11 +357,40 @@ Item {
       }
       PreviewPane {
         anchors.fill: parent
-        anchors.margins: 28
+        anchors.leftMargin: 28
+        anchors.rightMargin: 28
+        anchors.bottomMargin: 44
+        anchors.topMargin: 60
         preview: root.previewResult
         loading: root.previewLoading
         foreground: root.foreground
         accent: root.accent
+      }
+      Rectangle {
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.margins: 16
+        width: Math.max(88, openLabel.implicitWidth + 28)
+        height: 36
+        radius: 8
+        color: openHover.containsMouse ? root.accent : "transparent"
+        border.color: root.accent
+        border.width: 1
+        Text {
+          id: openLabel
+          anchors.centerIn: parent
+          text: "Open"
+          color: openHover.containsMouse ? root.background : root.foreground
+          font.pixelSize: Style.font.body
+          font.bold: true
+        }
+        MouseArea {
+          id: openHover
+          anchors.fill: parent
+          hoverEnabled: true
+          cursorShape: Qt.PointingHandCursor
+          onClicked: root.openCurrent()
+        }
       }
       Text {
         anchors.bottom: parent.bottom
