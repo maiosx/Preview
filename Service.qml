@@ -19,6 +19,9 @@ Item {
   property string searchNeedle: ""
   property bool searchRunning: false
   property string previewPath: ""
+  property string diskLabel: ""
+  property real diskUsedFrac: 0
+  property double diskTotal: 0
 
   readonly property string searchBody: "q=\"$1\"; home=\"$2\"; " +
     "case \"$home\" in /home/*|/root) ;; *) exit 0 ;; esac; " +
@@ -35,7 +38,6 @@ Item {
   function escapeHtml(s) {
     return String(s || "").replace(/&/g, "&" + "amp;").replace(/</g, "&" + "lt;").replace(/>/g, "&" + "gt;")
   }
-
   function applyPathList(text, usedBackend) {
     var lines = String(text || "").split(/\r?\n/)
     var hits = []
@@ -60,9 +62,34 @@ Item {
     root.resultsRevision += 1
     root.lastStatus = "hits:" + hits.length
   }
-
+  function diskHuman(n) {
+    var v = Number(n) || 0
+    var tb = 1024 * 1024 * 1024 * 1024
+    var gb = 1024 * 1024 * 1024
+    if (v >= tb) return (v / tb).toFixed(1) + " TB"
+    if (v >= gb) {
+      var g = v / gb
+      return (g >= 10 ? g.toFixed(0) : g.toFixed(1)) + " GB"
+    }
+    return Format.humanSize(v)
+  }
+  function applyDf(text) {
+    var lines = String(text || "").split(/\r?\n/)
+    var row = ""
+    for (var i = 0; i < lines.length; i++) {
+      var t = String(lines[i] || "").replace(/^\s+|\s+$/g, "")
+      if (t.length && t.indexOf("Size") < 0 && t.indexOf("Avail") < 0) row = t
+    }
+    if (!row.length) return
+    var parts = row.split(/\s+/)
+    var size = Number(parts[0])
+    var avail = Number(parts[1])
+    if (!(size > 0)) return
+    root.diskTotal = size
+    root.diskUsedFrac = Math.max(0, Math.min(1, (size - avail) / size))
+    root.diskLabel = root.diskHuman(avail) + " free of " + root.diskHuman(size)
+  }
   function sanitize(q) { return String(q || "").replace(/[*?[\]\\'"]/g, "") }
-
   function query(q) {
     root.searchNeedle = root.sanitize(q)
     if (!root.searchNeedle.length) {
@@ -76,7 +103,6 @@ Item {
     Qt.callLater(root.startSearch)
     return String(root.resultsRevision + 1)
   }
-
   function startSearch() {
     if (searchProc.running) { searchProc.running = false; Qt.callLater(root.startSearch); return }
     searchProc.command = ["sh", "-c", root.searchBody, "preview-search", root.searchNeedle, root.home]
@@ -84,7 +110,6 @@ Item {
     root.searchRunning = true
     root.lastStatus = "searching"
   }
-
   function applyTextPreview(raw) {
     var s = String(raw || "")
     var binary = s.indexOf("\0") >= 0
@@ -103,7 +128,6 @@ Item {
     }
     root.previewRevision += 1
   }
-
   function requestPreview(path, page) {
     var p = String(path || "")
     root.previewPath = p
@@ -124,7 +148,6 @@ Item {
     previewFile.reload()
     return String(root.previewRevision + 1)
   }
-
   function preview(arg) {
     var path = String(arg || "")
     if (path.length && path.charAt(0) === "{") {
@@ -150,10 +173,12 @@ Item {
       preview: root.lastPreview,
       indexing: root.searchRunning,
       backend: root.backend,
-      lastStatus: root.lastStatus
+      lastStatus: root.lastStatus,
+      diskLabel: root.diskLabel,
+      diskUsedFrac: root.diskUsedFrac,
+      diskTotal: root.diskTotal
     })
   }
-
   FileView {
     id: previewFile
     printErrors: false
@@ -190,6 +215,24 @@ Item {
       root.searchRunning = false
       var collected = String(searchOut.text || "")
       if (root.lastStatus === "searching") root.applyPathList(collected, "search")
+    }
+  }
+  Process {
+    id: dfProc
+    running: false
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.applyDf(text)
+    }
+  }
+  Timer {
+    interval: 20000
+    running: true
+    repeat: true
+    triggeredOnStart: true
+    onTriggered: {
+      dfProc.command = ["df", "-B1", "--output=size,avail", root.home]
+      dfProc.running = true
     }
   }
   IpcHandler {
