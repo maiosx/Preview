@@ -1,14 +1,8 @@
 # Preview
 
-Fuzzy-find any file and preview it instantly: images, syntax-highlighted code, PDFs, CSVs. Space pins the preview fullscreen; Enter opens it. The most-missed macOS feature, native to Omarchy.
+Search your home folder and preview files from the Omarchy bar.
 
-Indexes `$HOME` by default (skips `.ssh`, `.gnupg`, password-store, keyrings, `node_modules`, `target`, `.git`, and other hidden directories). Preview cache is LRU-capped at 500 MB under `~/.cache/preview`. Selection history lives in `~/.local/state/preview/`. Nothing leaves the machine.
-
-This is an Omarchy shell plugin (service + overlay + bar-widget). It runs inside the long-lived `omarchy-shell` process. It does not start a second Quickshell instance. The bar chip starts in `barWidget.defaultSection` (`right`). Click it to toggle the finder.
-
-![Preview demo corpus — invoice, photo, table, Rust, README](demo.gif)
-
-Five-file demo corpus the overlay shows before you type (invoice, photo, 5k-row CSV, themed Rust, README). Generated off-device from the shipped samples; a live Hyprland capture is not possible on the macOS authoring host.
+![Preview](demo.gif)
 
 ## Install
 
@@ -59,69 +53,19 @@ omarchy plugin remove io.github.maiosx.preview
 omarchy-shell shell rescanPlugins
 ```
 
-That drops the search icon from the bar and the overlay. Optional leftovers:
+That drops the search icon from the bar and the overlay.
 
-**Keybinds** — older Preview versions wrote a marked block to `~/.config/hypr/bindings.lua`. Strip it *before* removing the plugin:
-
-```sh
-python3 ~/.config/omarchy/plugins/io.github.maiosx.preview/compat/install-binds.py --remove io.github.maiosx.preview
-```
-
-If the plugin directory is already gone, delete the marked block by hand:
-
-```
--- BEGIN io.github.maiosx.preview
-o.bind("SUPER + ALT + F", "Preview", "omarchy-shell shell toggle io.github.maiosx.preview '{}'")
--- END io.github.maiosx.preview
-```
-
-Hyprland reloads `bindings.lua` on save. To drop a live bind immediately:
-
-```sh
-hyprctl keyword unbind "SUPER ALT, F"
-hyprctl keyword unbind "SUPER CTRL, SPACE"
-hyprctl keyword unbind "SUPER, PERIOD"
-```
-
-**Cache / history** (safe to delete):
+Optional leftovers (safe to delete):
 
 ```sh
 rm -rf ~/.cache/preview ~/.local/state/preview
 ```
 
+Older Preview versions may have written a bind to `~/.config/hypr/bindings.lua`. Delete the marked `-- BEGIN/END io.github.maiosx.preview` block if it is still there.
+
 ## Usage
 
-| Combo | Action |
-|---|---|
-| Bar chip | Toggle finder + preview |
-| Super+. | Suggested toggle (add in bindings.lua) |
-| Super+Alt+. | Alternate if Super+. is already taken |
-| ↑ ↓ | Move selection (preview follows) |
-| Space | Pin / unpin fullscreen preview |
-| j / k | Next / previous PDF page when pinned |
-| Enter | Open with `gio open` |
-| Ctrl+Enter | Reveal parent folder |
-| Esc | Unpin, then close |
-| ? | Indexed roots, watch cap, cache use |
-
-A hotkey is **opt-in**. Enabling the plugin does not write `~/.config/hypr/bindings.lua`. Add a bind yourself if you want one. Super+Shift+P is Omarchy's Google Photos bind and is never stolen. Super+Ctrl+. is Transcode and is not used.
-
-Lua binds show dispatcher `__lua` plus a description — "ours" is plugin id in `arg` or description `Preview`.
-
-```
-bind = SUPER, period, exec, omarchy-shell shell toggle io.github.maiosx.preview '{}'
-bind = SUPER ALT, period, exec, omarchy-shell shell toggle io.github.maiosx.preview '{}'
-```
-
-Summon a specific file from a terminal or file-manager custom action (the Wayland-honest stand-in for “Space in Finder”):
-
-```sh
-omarchy-shell shell summon io.github.maiosx.preview '{"path":"/abs/invoice.pdf"}'
-# or, from this plugin dir:
-bin/quicklook /abs/invoice.pdf
-```
-
-Before you type, the overlay shows a five-file demo corpus (invoice PDF, photo, 5k-row CSV, themed Rust, a README) so the first second is already useful while `$HOME` walks in the background.
+Click the search icon in the bar. Type to find a file in `$HOME`. Results and a preview expand below the search field.
 
 ## What renders in 1.0
 
@@ -178,8 +122,6 @@ omarchy-shell io.github.maiosx.preview snapshot ''
 omarchy-shell io.github.maiosx.preview theme '{"bg":"#1e1e2e","fg":"#cdd6f4","accent":"#89b4fa"}'
 omarchy-shell io.github.maiosx.preview prefetch /tmp/file.pdf
 omarchy-shell io.github.maiosx.preview warmup ''
-omarchy-shell io.github.maiosx.preview installBinds ''
-omarchy-shell io.github.maiosx.preview removeBinds ''
 ```
 
 `preview` takes either a bare path or a `{"path":…,"page":N}` object. Overlay
@@ -209,7 +151,6 @@ bin/quicklookd --oneshot '{"id":1,"cmd":"status"}'
 - **Index cap 500k files**, watch/poll cap 2000 directories, preview cache 500 MB. Huge homes still get a cold path (`plocate` or a bounded walk) plus the demo corpus.
 - **Frecency uses selection history + mtime, never atime** (relatime lies).
 - **Helper binary.** `bin/quicklookd` is not in this git tree (see `bin/README.md` and `CHECKSUMS.txt`). Cold-judge `plugin add --enable` uses `compat/` (Python when present, POSIX `find` + real `gio open` otherwise). `build.sh` compiles from source. `.github/workflows/release.yml` is how Linux musl binaries and verified hashes are produced — they are not invented on macOS.
-- **Keybinds are opt-in from the bar chip.** First load does not write `bindings.lua`. Occupied combos are skipped. Never `hl.unbind`. First open of the overlay repeats the table and the privacy sentence. The first-run card is persisted in `~/.local/state/preview/ui.json`.
 
 ## v1.1 roadmap
 
