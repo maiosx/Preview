@@ -152,12 +152,6 @@ bin/quicklookd --oneshot '{"id":1,"cmd":"status"}'
 - **Frecency uses selection history + mtime, never atime** (relatime lies).
 - **Helper binary.** `bin/quicklookd` is not in this git tree (see `bin/README.md` and `CHECKSUMS.txt`). Cold-judge `plugin add --enable` uses `compat/` (Python when present, POSIX `find` + real `gio open` otherwise). `build.sh` compiles from source. `.github/workflows/release.yml` is how Linux musl binaries and verified hashes are produced — they are not invented on macOS.
 
-## v1.1 roadmap
-
-- Markdown rendering
-- Archive listing
-- Video playback polish (only if QtMultimedia *and* codecs exist on the shell build)
-
 ## Tests (off-device)
 
 ```sh
