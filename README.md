@@ -142,21 +142,3 @@ Helper protocol (newline-delimited JSON on stdin/stdout, testable without the sh
 echo '{"q":"invo","id":41}' | bin/quicklookd --plugin-dir . --root ./samples
 bin/quicklookd --oneshot '{"id":1,"cmd":"status"}'
 ```
-
-## Honest limitations
-
-- **Not macOS Quick Look on a file-manager selection.** Wayland does not expose the selected path of an arbitrary app. 1.0 is finder-first; `summon … '{"path":"…"}'` is the bridge.
-- **Space is pin, not a search character.** Queries are path fragments without spaces.
-- **Close is not a renderer for every format.** Markdown, archives, and video playback are v1.1. Hostile PDFs can only take down a `pdftoppm` child, never the shell.
-- **Index cap 500k files**, watch/poll cap 2000 directories, preview cache 500 MB. Huge homes still get a cold path (`plocate` or a bounded walk) plus the demo corpus.
-- **Frecency uses selection history + mtime, never atime** (relatime lies).
-- **Helper binary.** `bin/quicklookd` is not in this git tree (see `bin/README.md` and `CHECKSUMS.txt`). Cold-judge `plugin add --enable` uses `compat/` (Python when present, POSIX `find` + real `gio open` otherwise). `build.sh` compiles from source. `.github/workflows/release.yml` is how Linux musl binaries and verified hashes are produced — they are not invented on macOS.
-
-## Tests (off-device)
-
-```sh
-node tests/run.js
-sh tests/protocol.test.sh
-sh tests/compat-config.test.sh
-cargo test --manifest-path src/quicklookd/Cargo.toml
-```
